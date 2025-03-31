@@ -140,7 +140,7 @@ const App: React.FC = () => {
 
   const onSubmit = async (data: FormInputs) => {
     try {
-      const response = await fetch('http://localhost:3000/api', {
+      const response = await fetch('/api', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -152,10 +152,13 @@ const App: React.FC = () => {
         generatePDF(data);  // Generate PDF after successful submission
         setShowThankYou(true);
       } else {
-        console.error('Submission failed');
+        const errorData = await response.json();
+        console.error('Submission failed:', errorData);
+        alert('Failed to submit the form. Please try again.');
       }
     } catch (error) {
       console.error('Error:', error);
+      alert('An error occurred while submitting the form. Please try again.');
     }
   };
 
