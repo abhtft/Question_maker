@@ -79,15 +79,15 @@ const App: React.FC = () => {
     // Table header
     const startY = 80;
     const headerHeight = 10;
-    const rowHeight = 8;
+    const rowHeight = 20; // Increased row height for wrapped text
     const columns = {
       '#': { x: 20, width: 10 },
-      'Item Name': { x: 30, width: 40 },
-      'Brand': { x: 70, width: 30 },
-      'Quantity': { x: 100, width: 20 },
-      'Unit': { x: 120, width: 20 },
-      'Priority': { x: 140, width: 20 },
-      'Description': { x: 160, width: 30 }
+      'Item Name': { x: 30, width: 30 },
+      'Brand': { x: 60, width: 25 },
+      'Quantity': { x: 85, width: 15 },
+      'Unit': { x: 100, width: 15 },
+      'Priority': { x: 115, width: 20 },
+      'Description': { x: 135, width: 55 } // Increased width for description
     };
 
     // Draw table header
@@ -105,22 +105,57 @@ const App: React.FC = () => {
     doc.setTextColor(0, 0, 0); // Black text for content
     let currentY = startY + headerHeight;
 
+    // Function to split text into lines
+    const splitTextIntoLines = (text: string, maxWidth: number) => {
+      const words = text.split(' ');
+      const lines: string[] = [];
+      let currentLine = words[0];
+
+      for (let i = 1; i < words.length; i++) {
+        const word = words[i];
+        const width = doc.getStringUnitWidth(currentLine + ' ' + word) * doc.getFontSize() / doc.internal.scaleFactor;
+        
+        if (width < maxWidth) {
+          currentLine += ' ' + word;
+        } else {
+          lines.push(currentLine);
+          currentLine = word;
+        }
+      }
+      lines.push(currentLine);
+      return lines;
+    };
+
     data.items.forEach((item, index) => {
+      const maxWidth = 50; // Maximum width for description text in mm
+      
       // Add zebra striping
       if (index % 2 === 0) {
         doc.setFillColor(245, 245, 245);
         doc.rect(20, currentY, 170, rowHeight, 'F');
       }
 
+      // Draw cell contents
       doc.text(String(index + 1), columns['#'].x, currentY + 6);
       doc.text(item.itemName, columns['Item Name'].x, currentY + 6);
       doc.text(item.brand, columns['Brand'].x, currentY + 6);
       doc.text(item.quantity, columns['Quantity'].x, currentY + 6);
       doc.text(item.unit, columns['Unit'].x, currentY + 6);
       doc.text(item.priority.toLowerCase(), columns['Priority'].x, currentY + 6);
-      doc.text(item.description, columns['Description'].x, currentY + 6);
+
+      // Handle description with text wrapping
+      const descriptionLines = splitTextIntoLines(item.description, maxWidth);
+      descriptionLines.forEach((line, lineIndex) => {
+        doc.text(line, columns['Description'].x, currentY + 6 + (lineIndex * 4));
+      });
 
       currentY += rowHeight;
+
+      // Add a new page if we're near the bottom
+      if (currentY > doc.internal.pageSize.height - rowHeight) {
+        doc.addPage();
+        currentY = 20; // Reset Y position on new page
+      }
     });
 
     // Draw table borders
