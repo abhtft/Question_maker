@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface VoiceInputProps {
   onTextReceived: (text: string) => void;
@@ -44,60 +44,77 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTextReceived, isRecording, se
   const [error, setError] = useState<string>('');
   const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
 
-  const startRecording = () => {
-    setError('');
+  useEffect(() => {
+    // Initialize speech recognition when component mounts
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
-    if (!SpeechRecognition) {
-      setError('Speech recognition is not supported in this browser.');
-      return;
-    }
+    if (SpeechRecognition) {
+      const recognitionInstance = new SpeechRecognition() as SpeechRecognition;
+      recognitionInstance.lang = 'en-US';
+      recognitionInstance.continuous = true;
+      recognitionInstance.interimResults = true;
 
-    const recognitionInstance = new SpeechRecognition() as SpeechRecognition;
-    recognitionInstance.lang = 'en-US';
-    recognitionInstance.continuous = true;  // Allow continuous recording
-    recognitionInstance.interimResults = true;  // Show interim results
+      recognitionInstance.onstart = () => {
+        setIsRecording(true);
+        setError('');
+      };
 
-    recognitionInstance.onstart = () => {
-      setIsRecording(true);
-    };
+      recognitionInstance.onresult = (event: SpeechRecognitionEvent) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
 
-    recognitionInstance.onresult = (event: SpeechRecognitionEvent) => {
-      let finalTranscript = '';
-      let interimTranscript = '';
-
-      // Combine all results
-      const results = event.results;
-      for (let i = 0; i < Object.keys(results).length; i++) {
-        const result = results[i];
-        if (result && result[0]) {
-          const transcript = result[0].transcript;
-          if (result[0].isFinal) {
-            finalTranscript += transcript + ' ';
-          } else {
-            interimTranscript += transcript;
+        // Combine all results
+        const results = event.results;
+        for (let i = 0; i < Object.keys(results).length; i++) {
+          const result = results[i];
+          if (result && result[0]) {
+            const transcript = result[0].transcript;
+            if (result[0].isFinal) {
+              finalTranscript += transcript + ' ';
+            } else {
+              interimTranscript += transcript;
+            }
           }
         }
+
+        // Update the text field with both final and interim results
+        onTextReceived((finalTranscript + interimTranscript).trim());
+      };
+
+      recognitionInstance.onerror = (event: { error: string }) => {
+        setError('Error occurred in recognition: ' + event.error);
+        setIsRecording(false);
+        recognitionInstance.stop();
+        setRecognition(null);
+      };
+
+      recognitionInstance.onend = () => {
+        setIsRecording(false);
+        setRecognition(null);
+      };
+
+      setRecognition(recognitionInstance);
+    } else {
+      setError('Speech recognition is not supported in this browser.');
+    }
+
+    // Cleanup when component unmounts
+    return () => {
+      if (recognition) {
+        recognition.stop();
       }
-
-      // Update the text field with both final and interim results
-      onTextReceived((finalTranscript + interimTranscript).trim());
     };
+  }, []);
 
-    recognitionInstance.onerror = (event: { error: string }) => {
-      setError('Error occurred in recognition: ' + event.error);
-      setIsRecording(false);
-      recognitionInstance.stop();
-      setRecognition(null);
-    };
-
-    recognitionInstance.onend = () => {
-      setIsRecording(false);
-      setRecognition(null);
-    };
-
-    recognitionInstance.start();
-    setRecognition(recognitionInstance);
+  const startRecording = () => {
+    if (recognition) {
+      try {
+        recognition.start();
+      } catch (error) {
+        setError('Failed to start recording. Please try again.');
+      }
+    } else {
+      setError('Speech recognition is not available.');
+    }
   };
 
   const stopRecording = () => {
@@ -113,6 +130,7 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTextReceived, isRecording, se
         className={`voice-button ${isRecording ? 'recording' : ''}`}
         onClick={isRecording ? stopRecording : startRecording}
         title={isRecording ? "Stop recording" : "Start recording"}
+        disabled={!recognition}
       >
         <svg 
           viewBox="0 0 24 24" 

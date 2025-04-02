@@ -14,7 +14,15 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__, static_folder='dist', static_url_path='')
-CORS(app)
+
+# Configure CORS
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"]
+    }
+})
 
 # Initialize MongoDB
 try:
@@ -47,6 +55,7 @@ def extract_entities(text):
         quantity = ""
         brand = ""
         item_name = []
+        unit = ""
         
         # Extract numbers for quantity
         numbers = re.findall(r'\d+(?:\.\d+)?', text)
@@ -57,9 +66,10 @@ def extract_entities(text):
             if num_index != -1:
                 after_num = text[num_index + len(numbers[0]):].strip()
                 units = ['kg', 'g', 'l', 'ml', 'piece', 'pieces', 'pcs']
-                for unit in units:
-                    if after_num.lower().startswith(unit):
-                        quantity += f" {unit}"
+                for u in units:
+                    if after_num.lower().startswith(u):
+                        unit = u
+                        quantity += f" {u}"
                         break
         
         # Extract brand (look for words after "brand" or company names)
@@ -87,6 +97,7 @@ def extract_entities(text):
             'quantity': quantity,
             'brand': brand,
             'itemName': item_name,
+            'unit': unit,
             'description': text
         }
     except Exception as e:
@@ -95,6 +106,7 @@ def extract_entities(text):
             'quantity': '',
             'brand': '',
             'itemName': text,
+            'unit': '',
             'description': text
         }
 
@@ -118,7 +130,32 @@ def serve_static(path):
         print(f"Error serving static file {path}: {e}")
         return "Server Error", 500
 
-# API endpoint for saving shopping lists
+@app.route('/api/analyze', methods=['POST', 'OPTIONS'])
+def analyze_text():
+    if request.method == 'OPTIONS':
+        return '', 200
+        
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        text = data.get('text', '')
+        if not text:
+            return jsonify({'error': 'No text provided'}), 400
+            
+        print(f"Analyzing text: {text}")
+        result = extract_entities(text)
+        print(f"Analysis result: {result}")
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"❌ Error in text analysis: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/api', methods=['POST', 'OPTIONS'])
 def save_shopping_list():
     if request.method == 'OPTIONS':
@@ -146,32 +183,12 @@ def save_shopping_list():
             'error': str(e)
         }), 500
 
-# Health check endpoint
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({
         'status': 'healthy',
         'mongodb': 'connected'
     }), 200
-
-@app.route('/api/analyze', methods=['POST'])
-def analyze_text():
-    try:
-        data = request.json
-        text = data.get('text', '')
-        
-        if not text:
-            return jsonify({'error': 'No text provided'}), 400
-            
-        result = extract_entities(text)
-        return jsonify(result)
-        
-    except Exception as e:
-        print("❌ Error in text analysis:", str(e))
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
 
 @app.errorhandler(404)
 def not_found(e):
