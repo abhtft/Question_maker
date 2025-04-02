@@ -1,24 +1,16 @@
-#!/usr/bin/env bash
-# Exit on error
-set -o errexit
+#!/bin/bash
 
-echo "🔧 Starting build process..."
+echo "Starting build process..."
 
-# Install Python dependencies with pip cache
+# Upgrade pip and install Python dependencies
 pip install --upgrade pip
 pip install -r requirements.txt --no-cache-dir
 
-echo "✅ Python dependencies installed"
+echo "Python dependencies installed successfully."
 
 # Build React frontend
-echo "🏗️ Building frontend..."
+echo "Building React frontend..."
 npm install
 npm run build
 
-# Create dist directory if it doesn't exist
-mkdir -p dist
-
-# Copy build files to dist
-cp -r build/* dist/
-
-echo "🎉 Build completed successfully!" 
+echo "Build completed successfully!" 
