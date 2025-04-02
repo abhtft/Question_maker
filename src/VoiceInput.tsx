@@ -8,6 +8,7 @@ interface VoiceInputProps {
 
 const VoiceInput: React.FC<VoiceInputProps> = ({ onTextReceived, isRecording, setIsRecording }) => {
   const [error, setError] = useState<string>('');
+  const [recognition, setRecognition] = useState<any>(null);
 
   const startRecording = () => {
     setError('');
@@ -18,31 +19,53 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTextReceived, isRecording, se
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    const recognitionInstance = new SpeechRecognition();
+    recognitionInstance.lang = 'en-US';
+    recognitionInstance.continuous = true;  // Allow continuous recording
+    recognitionInstance.interimResults = true;  // Show interim results
 
-    recognition.onstart = () => {
+    recognitionInstance.onstart = () => {
       setIsRecording(true);
     };
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      const transcript = event.results[0][0].transcript;
-      onTextReceived(transcript);
-      setIsRecording(false);
+    recognitionInstance.onresult = (event: SpeechRecognitionEvent) => {
+      let finalTranscript = '';
+      let interimTranscript = '';
+
+      // Combine all results
+      for (let i = 0; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' ';
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      // Update the text field with both final and interim results
+      onTextReceived((finalTranscript + interimTranscript).trim());
     };
 
-    recognition.onerror = (event: { error: string }) => {
+    recognitionInstance.onerror = (event: { error: string }) => {
       setError('Error occurred in recognition: ' + event.error);
       setIsRecording(false);
+      recognitionInstance.stop();
+      setRecognition(null);
     };
 
-    recognition.onend = () => {
+    recognitionInstance.onend = () => {
       setIsRecording(false);
+      setRecognition(null);
     };
 
-    recognition.start();
+    recognitionInstance.start();
+    setRecognition(recognitionInstance);
+  };
+
+  const stopRecording = () => {
+    if (recognition) {
+      recognition.stop();
+    }
   };
 
   return (
@@ -50,8 +73,8 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTextReceived, isRecording, se
       <button
         type="button"
         className={`voice-button ${isRecording ? 'recording' : ''}`}
-        onClick={startRecording}
-        disabled={isRecording}
+        onClick={isRecording ? stopRecording : startRecording}
+        title={isRecording ? "Stop recording" : "Start recording"}
       >
         <svg 
           viewBox="0 0 24 24" 
@@ -63,10 +86,18 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTextReceived, isRecording, se
           strokeLinecap="round" 
           strokeLinejoin="round"
         >
-          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-          <line x1="12" y1="19" x2="12" y2="23"></line>
-          <line x1="8" y1="23" x2="16" y2="23"></line>
+          {isRecording ? (
+            // Stop icon when recording
+            <rect x="6" y="6" width="12" height="12" />
+          ) : (
+            // Microphone icon when not recording
+            <>
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </>
+          )}
         </svg>
       </button>
       {error && <div className="error-message">{error}</div>}

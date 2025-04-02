@@ -38,7 +38,7 @@ const App: React.FC = () => {
   const [showThankYou, setShowThankYou] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   
-  const { register, control, handleSubmit, reset, setValue } = useForm<FormInputs>({
+  const { register, control, handleSubmit, reset, setValue, getValues } = useForm<FormInputs>({
     defaultValues: {
       customerName: '',
       favoriteShop: '',
@@ -50,6 +50,40 @@ const App: React.FC = () => {
     control,
     name: "items"
   });
+
+  const analyzeDescription = async (index: number) => {
+    const description = getValues(`items.${index}.description`);
+    if (!description) {
+      alert('Please fill in the description first');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: description }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setValue(`items.${index}.itemName`, result.itemName);
+        setValue(`items.${index}.brand`, result.brand);
+        setValue(`items.${index}.quantity`, result.quantity);
+        setValue(`items.${index}.unit`, result.unit);
+        setValue(`items.${index}.description`, result.description);
+      } else {
+        const errorData = await response.json();
+        console.error('Analysis failed:', errorData);
+        alert('Failed to analyze the description. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      alert('An error occurred while analyzing the description. Please try again.');
+    }
+  };
 
   const generatePDF = (data: FormInputs) => {
     // Create new PDF in A4 format
@@ -238,6 +272,13 @@ const App: React.FC = () => {
             <div key={field.id} className="item-entry">
               <div className="item-header">
                 <h3>Item {index + 1}</h3>
+                <button
+                  type="button"
+                  className="analyze-button"
+                  onClick={() => analyzeDescription(index)}
+                >
+                  A
+                </button>
                 {index > 0 && (
                   <button
                     type="button"
