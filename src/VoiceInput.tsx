@@ -6,9 +6,43 @@ interface VoiceInputProps {
   setIsRecording: (isRecording: boolean) => void;
 }
 
+// Add type definitions for SpeechRecognition API
+interface SpeechRecognitionResult {
+  [key: number]: {
+    [key: number]: {
+      transcript: string;
+      isFinal: boolean;
+    };
+  };
+}
+
+interface SpeechRecognitionEvent {
+  results: SpeechRecognitionResult;
+}
+
+interface SpeechRecognition {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  onstart: () => void;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: { error: string }) => void;
+  onend: () => void;
+}
+
+// Declare global types for Web Speech API
+declare global {
+  interface Window {
+    SpeechRecognition: any;
+    webkitSpeechRecognition: any;
+  }
+}
+
 const VoiceInput: React.FC<VoiceInputProps> = ({ onTextReceived, isRecording, setIsRecording }) => {
   const [error, setError] = useState<string>('');
-  const [recognition, setRecognition] = useState<any>(null);
+  const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
 
   const startRecording = () => {
     setError('');
@@ -19,7 +53,7 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTextReceived, isRecording, se
       return;
     }
 
-    const recognitionInstance = new SpeechRecognition();
+    const recognitionInstance = new SpeechRecognition() as SpeechRecognition;
     recognitionInstance.lang = 'en-US';
     recognitionInstance.continuous = true;  // Allow continuous recording
     recognitionInstance.interimResults = true;  // Show interim results
@@ -33,12 +67,16 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTextReceived, isRecording, se
       let interimTranscript = '';
 
       // Combine all results
-      for (let i = 0; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript + ' ';
-        } else {
-          interimTranscript += transcript;
+      const results = event.results;
+      for (let i = 0; i < Object.keys(results).length; i++) {
+        const result = results[i];
+        if (result && result[0]) {
+          const transcript = result[0].transcript;
+          if (result[0].isFinal) {
+            finalTranscript += transcript + ' ';
+          } else {
+            interimTranscript += transcript;
+          }
         }
       }
 

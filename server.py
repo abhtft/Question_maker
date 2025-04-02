@@ -4,7 +4,9 @@ from pymongo import MongoClient
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-from transformers import pipeline
+import nltk
+from nltk.tokenize import word_tokenize
+from nltk.tag import pos_tag
 import re
 
 # Load environment variables
@@ -24,75 +26,63 @@ except Exception as e:
     print("❌ MongoDB Connection Error:", str(e))
     raise e
 
-# Initialize the multilingual NER pipeline
+# Download required NLTK data
 try:
-    ner_pipeline = pipeline("ner", model="Davlan/bert-base-multilingual-cased-ner-hrl")
-    print("✅ NLP Model loaded successfully")
+    nltk.download('punkt', quiet=True)
+    nltk.download('averaged_perceptron_tagger', quiet=True)
+    nltk.download('maxent_ne_chunker', quiet=True)
+    nltk.download('words', quiet=True)
+    print("✅ NLP resources downloaded successfully")
 except Exception as e:
-    print(f"❌ Error loading NLP model: {e}")
-    ner_pipeline = None
+    print(f"❌ Error downloading NLP resources: {e}")
 
 def extract_entities(text):
-    """Extract entities from text using multilingual model."""
+    """Extract entities from text using NLTK."""
     try:
-        # Get NER results
-        ner_results = ner_pipeline(text)
+        # Tokenize and tag the text
+        tokens = word_tokenize(text)
+        tagged = pos_tag(tokens)
         
         # Initialize variables
         quantity = ""
         brand = ""
-        item_name = ""
-        
-        # Process NER results
-        current_entity = {"text": "", "type": ""}
-        
-        for result in ner_results:
-            # Merge subwords of the same entity
-            if result['entity'].startswith('B-'):  # Beginning of entity
-                if current_entity["text"]:
-                    # Store previous entity
-                    if current_entity["type"] == "ORG":
-                        brand = current_entity["text"].strip()
-                    elif current_entity["type"] == "QUANTITY":
-                        quantity = current_entity["text"].strip()
-                
-                current_entity = {
-                    "text": result['word'],
-                    "type": result['entity'][2:]  # Remove B- prefix
-                }
-            elif result['entity'].startswith('I-'):  # Inside of entity
-                current_entity["text"] += " " + result['word']
-        
-        # Store last entity
-        if current_entity["text"]:
-            if current_entity["type"] == "ORG":
-                brand = current_entity["text"].strip()
-            elif current_entity["type"] == "QUANTITY":
-                quantity = current_entity["text"].strip()
+        item_name = []
         
         # Extract numbers for quantity
-        numbers = re.findall(r'\d+', text)
-        if numbers and not quantity:
+        numbers = re.findall(r'\d+(?:\.\d+)?', text)
+        if numbers:
             quantity = numbers[0]
+            # Look for units after the number
+            num_index = text.find(numbers[0])
+            if num_index != -1:
+                after_num = text[num_index + len(numbers[0]):].strip()
+                units = ['kg', 'g', 'l', 'ml', 'piece', 'pieces', 'pcs']
+                for unit in units:
+                    if after_num.lower().startswith(unit):
+                        quantity += f" {unit}"
+                        break
         
-        # Extract brand if not found by NER
-        if not brand:
-            # Common brand indicators
-            brand_indicators = ['brand', 'company', 'make']
-            words = text.lower().split()
-            for i, word in enumerate(words):
-                if word in brand_indicators and i + 1 < len(words):
-                    brand = words[i + 1]
-                    break
+        # Extract brand (look for words after "brand" or company names)
+        words = text.lower().split()
+        for i, word in enumerate(words):
+            if word in ['brand', 'company', 'make'] and i + 1 < len(words):
+                brand = words[i + 1].title()
+                break
         
-        # Get item name by removing brand and quantity
-        words = text.split()
-        item_words = []
-        for word in words:
-            if word.lower() not in [brand.lower(), quantity.lower(), 'brand', 'piece', 'pieces', 'kg', 'g', 'ml', 'l', 'pcs']:
-                item_words.append(word)
-        item_name = ' '.join(item_words).strip()
+        # Extract item name (use POS tagging to find nouns)
+        for word, tag in tagged:
+            # Skip numbers, units, and brand-related words
+            if (word.lower() not in ['brand', 'company', 'make'] and 
+                not re.match(r'\d+', word) and 
+                word.lower() not in ['kg', 'g', 'l', 'ml', 'piece', 'pieces', 'pcs']):
+                if tag.startswith('NN'):  # If it's a noun
+                    item_name.append(word)
         
+        # Clean up item name
+        item_name = ' '.join(item_name).strip()
+        if not item_name and tokens:  # Fallback: use first token if no nouns found
+            item_name = tokens[0]
+            
         return {
             'quantity': quantity,
             'brand': brand,

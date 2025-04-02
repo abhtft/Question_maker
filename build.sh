@@ -2,10 +2,16 @@
 # Exit on error
 set -o errexit
 
-# Install Python dependencies
-pip install -r requirements.txt
+echo "🔧 Starting build process..."
+
+# Install Python dependencies with pip cache
+pip install --upgrade pip
+pip install -r requirements.txt --no-cache-dir
+
+echo "✅ Python dependencies installed"
 
 # Build React frontend
+echo "🏗️ Building frontend..."
 npm install
 npm run build
 
