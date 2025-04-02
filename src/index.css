@@ -1,14 +1,77 @@
+.item-container {
+  position: relative;
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  background: #fff;
+}
+
+.item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.analyze-button-container {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .analyze-button {
   background-color: #4a90e2;
   color: white;
   border: none;
   border-radius: 4px;
-  padding: 4px 8px;
-  margin-left: 8px;
+  padding: 8px 16px;
   cursor: pointer;
-  font-weight: bold;
+  font-size: 14px;
+  transition: background-color 0.2s;
+  white-space: nowrap;
 }
 
 .analyze-button:hover {
   background-color: #357abd;
+}
+
+.analyze-button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.form-row {
+  margin-bottom: 15px;
+}
+
+.description-container {
+  position: relative;
+  width: 100%;
+}
+
+.description-input {
+  width: 100%;
+  min-height: 80px;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.voice-input-container {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  display: flex;
+  gap: 10px;
+}
+
+.voice-analyze-container {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
 } 

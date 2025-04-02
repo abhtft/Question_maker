@@ -51,13 +51,13 @@ def extract_entities(text):
         tokens = word_tokenize(text)
         tagged = pos_tag(tokens)
         
-        # Initialize variables
-        quantity = ""
-        brand = ""
-        item_name = []
-        unit = ""
+        # Initialize variables with None to indicate no value found
+        quantity = None
+        brand = None
+        item_name = None
+        unit = None
         
-        # Extract numbers for quantity
+        # Extract numbers for quantity (optional)
         numbers = re.findall(r'\d+(?:\.\d+)?', text)
         if numbers:
             quantity = numbers[0]
@@ -69,43 +69,75 @@ def extract_entities(text):
                 for u in units:
                     if after_num.lower().startswith(u):
                         unit = u
-                        quantity += f" {u}"
                         break
         
-        # Extract brand (look for words after "brand" or company names)
+        # Extract brand (optional)
         words = text.lower().split()
         for i, word in enumerate(words):
-            if word in ['brand', 'company', 'make'] and i + 1 < len(words):
-                brand = words[i + 1].title()
+            # Check if current word is "brand"
+            if word == 'brand':
+                # Check word before "brand"
+                if i > 0:
+                    brand = words[i-1].title()
+                # If no brand found before, check word after "brand"
+                elif i + 1 < len(words):
+                    brand = words[i+1].title()
+                break
+            # Check if current word ends with "brand"
+            elif word.endswith('brand') and len(word) > 5:
+                brand = word[:-5].title()
                 break
         
-        # Extract item name (use POS tagging to find nouns)
+        # If no brand found with "brand" keyword, look for known brand names
+        if not brand:
+            known_brands = ['cinthol', 'lux', 'dettol', 'lifebuoy']
+            for word in words:
+                if word in known_brands:
+                    brand = word.title()
+                    break
+        
+        # Extract item name (required - will use the input text if no noun found)
+        skip_words = ['brand', 'company', 'make', 'expiry', 'date', 'dekh', 'ke']
+        skip_words.extend(['kg', 'g', 'l', 'ml', 'piece', 'pieces', 'pcs'])
+        if brand:
+            skip_words.append(brand.lower())
+            
+        item_words = []
         for word, tag in tagged:
-            # Skip numbers, units, and brand-related words
-            if (word.lower() not in ['brand', 'company', 'make'] and 
-                not re.match(r'\d+', word) and 
-                word.lower() not in ['kg', 'g', 'l', 'ml', 'piece', 'pieces', 'pcs']):
+            # Skip numbers, units, brand-related words, and other utility words
+            if (word.lower() not in skip_words and 
+                not re.match(r'\d+', word)):
                 if tag.startswith('NN'):  # If it's a noun
-                    item_name.append(word)
+                    item_words.append(word)
         
         # Clean up item name
-        item_name = ' '.join(item_name).strip()
-        if not item_name and tokens:  # Fallback: use first token if no nouns found
-            item_name = tokens[0]
+        if item_words:
+            item_name = ' '.join(item_words).strip()
+        else:
+            # Fallback: use first noun if no other nouns found
+            for word, tag in tagged:
+                if tag.startswith('NN') and word.lower() not in skip_words:
+                    item_name = word
+                    break
+            # If still no item name, use first token
+            if not item_name and tokens:
+                item_name = tokens[0]
             
+        # Convert None values to empty strings in the response
         return {
-            'quantity': quantity,
-            'brand': brand,
-            'itemName': item_name,
-            'unit': unit,
+            'quantity': quantity if quantity is not None else '',
+            'brand': brand if brand is not None else '',
+            'itemName': item_name if item_name is not None else text,  # Use original text as fallback
+            'unit': unit if unit is not None else '',
             'description': text
         }
     except Exception as e:
         print(f"Error in extract_entities: {e}")
+        # Return minimal response with original text preserved
         return {
             'quantity': '',
             'brand': '',
-            'itemName': text,
+            'itemName': text,  # Use original text as fallback
             'unit': '',
             'description': text
         }

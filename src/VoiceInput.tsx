@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 interface VoiceInputProps {
   onTextReceived: (text: string) => void;
@@ -30,6 +30,8 @@ interface SpeechRecognition {
   onresult: (event: SpeechRecognitionEvent) => void;
   onerror: (event: { error: string }) => void;
   onend: () => void;
+  onspeechend: () => void;
+  onnomatch: () => void;
 }
 
 // Declare global types for Web Speech API
@@ -43,6 +45,8 @@ declare global {
 const VoiceInput: React.FC<VoiceInputProps> = ({ onTextReceived, isRecording, setIsRecording }) => {
   const [error, setError] = useState<string>('');
   const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
+  const timeoutRef = useRef<number | null>(null);
+  const finalTranscriptRef = useRef<string>('');
 
   useEffect(() => {
     // Initialize speech recognition when component mounts
@@ -50,16 +54,17 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTextReceived, isRecording, se
     if (SpeechRecognition) {
       const recognitionInstance = new SpeechRecognition() as SpeechRecognition;
       recognitionInstance.lang = 'en-US';
-      recognitionInstance.continuous = true;
+      recognitionInstance.continuous = false; // Changed to false to stop after each utterance
       recognitionInstance.interimResults = true;
 
       recognitionInstance.onstart = () => {
         setIsRecording(true);
         setError('');
+        finalTranscriptRef.current = '';
       };
 
       recognitionInstance.onresult = (event: SpeechRecognitionEvent) => {
-        let finalTranscript = '';
+        let finalTranscript = finalTranscriptRef.current;
         let interimTranscript = '';
 
         // Combine all results
@@ -70,6 +75,7 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTextReceived, isRecording, se
             const transcript = result[0].transcript;
             if (result[0].isFinal) {
               finalTranscript += transcript + ' ';
+              finalTranscriptRef.current = finalTranscript;
             } else {
               interimTranscript += transcript;
             }
@@ -78,18 +84,36 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTextReceived, isRecording, se
 
         // Update the text field with both final and interim results
         onTextReceived((finalTranscript + interimTranscript).trim());
+
+        // Reset the auto-stop timer
+        if (timeoutRef.current) {
+          window.clearTimeout(timeoutRef.current);
+        }
+        timeoutRef.current = window.setTimeout(() => {
+          if (recognition && isRecording) {
+            recognition.stop();
+          }
+        }, 1500); // Stop after 1.5 seconds of silence
       };
 
       recognitionInstance.onerror = (event: { error: string }) => {
-        setError('Error occurred in recognition: ' + event.error);
+        if (event.error !== 'no-speech') { // Ignore no-speech errors
+          setError('Error occurred in recognition: ' + event.error);
+        }
         setIsRecording(false);
         recognitionInstance.stop();
-        setRecognition(null);
       };
 
       recognitionInstance.onend = () => {
         setIsRecording(false);
-        setRecognition(null);
+        if (timeoutRef.current) {
+          window.clearTimeout(timeoutRef.current);
+        }
+      };
+
+      recognitionInstance.onspeechend = () => {
+        // Stop recognition when speech ends
+        recognitionInstance.stop();
       };
 
       setRecognition(recognitionInstance);
@@ -102,12 +126,16 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTextReceived, isRecording, se
       if (recognition) {
         recognition.stop();
       }
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+      }
     };
   }, []);
 
   const startRecording = () => {
     if (recognition) {
       try {
+        finalTranscriptRef.current = '';
         recognition.start();
       } catch (error) {
         setError('Failed to start recording. Please try again.');
@@ -120,6 +148,9 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTextReceived, isRecording, se
   const stopRecording = () => {
     if (recognition) {
       recognition.stop();
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+      }
     }
   };
 

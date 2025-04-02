@@ -59,7 +59,9 @@ const App: React.FC = () => {
     }
 
     try {
-      const response = await fetch('/api/analyze', {
+      // Get the base URL from the current window location
+      const baseUrl = window.location.origin;
+      const response = await fetch(`${baseUrl}/api/analyze`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -67,21 +69,24 @@ const App: React.FC = () => {
         body: JSON.stringify({ text: description }),
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        setValue(`items.${index}.itemName`, result.itemName);
-        setValue(`items.${index}.brand`, result.brand);
-        setValue(`items.${index}.quantity`, result.quantity);
-        setValue(`items.${index}.unit`, result.unit);
-        setValue(`items.${index}.description`, result.description);
-      } else {
-        const errorData = await response.json();
-        console.error('Analysis failed:', errorData);
-        alert('Failed to analyze the description. Please try again.');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+
+      const result = await response.json();
+      console.log('Analysis result:', result); // Debug log
+
+      // Only update fields if they have values
+      if (result.itemName) setValue(`items.${index}.itemName`, result.itemName);
+      if (result.brand) setValue(`items.${index}.brand`, result.brand);
+      if (result.quantity) setValue(`items.${index}.quantity`, result.quantity);
+      if (result.unit) setValue(`items.${index}.unit`, result.unit);
+      
+      // Always preserve the original description
+      setValue(`items.${index}.description`, description);
     } catch (error) {
-      console.error('Error:', error);
-      alert('An error occurred while analyzing the description. Please try again.');
+      console.error('Error analyzing description:', error);
+      alert('Failed to analyze the description. Please try again.');
     }
   };
 
@@ -269,79 +274,90 @@ const App: React.FC = () => {
 
         <div className="items-container">
           {fields.map((field, index) => (
-            <div key={field.id} className="item-entry">
+            <div key={field.id} className="item-container">
               <div className="item-header">
                 <h3>Item {index + 1}</h3>
-                <button
-                  type="button"
-                  className="analyze-button"
-                  onClick={() => analyzeDescription(index)}
-                >
-                  A
-                </button>
-                {index > 0 && (
+                <div className="analyze-button-container">
                   <button
                     type="button"
-                    className="remove-button"
-                    onClick={() => remove(index)}
+                    className="analyze-button"
+                    onClick={() => analyzeDescription(index)}
+                    disabled={!getValues(`items.${index}.description`)}
                   >
-                    ×
+                    Analyze
                   </button>
-                )}
+                </div>
               </div>
-              <select
-                {...register(`items.${index}.priority`)}
-                className="form-control"
-              >
-                <option value="">Select Priority</option>
-                <option value="High">High</option>
-                <option value="Medium">Medium</option>
-                <option value="Low">Low</option>
-              </select>
-              <input
-                {...register(`items.${index}.itemName`, { required: true })}
-                className="form-control"
-                placeholder="Item Name *"
-                required
-              />
-              <input
-                {...register(`items.${index}.brand`)}
-                className="form-control"
-                placeholder="Brand"
-              />
-              <div className="quantity-unit">
+
+              <div className="form-row">
+                <select {...register(`items.${index}.priority`)} className="priority-select">
+                  <option value="">Select Priority</option>
+                  <option value="HIGH">High</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="LOW">Low</option>
+                </select>
+              </div>
+              
+              <div className="form-row">
+                <input
+                  {...register(`items.${index}.itemName`)}
+                  placeholder="Item Name"
+                  className="item-input"
+                />
+              </div>
+
+              <div className="form-row">
+                <input
+                  {...register(`items.${index}.brand`)}
+                  placeholder="Brand"
+                  className="brand-input"
+                />
+              </div>
+
+              <div className="form-row quantity-unit">
                 <input
                   {...register(`items.${index}.quantity`)}
-                  className="form-control"
                   placeholder="Quantity"
-                  type="number"
+                  className="quantity-input"
                 />
-                <select
-                  {...register(`items.${index}.unit`)}
-                  className="form-control"
-                >
+                <select {...register(`items.${index}.unit`)} className="unit-select">
                   <option value="">Select Unit</option>
                   <option value="kg">kg</option>
                   <option value="g">g</option>
-                  <option value="L">L</option>
+                  <option value="l">l</option>
                   <option value="ml">ml</option>
+                  <option value="piece">piece</option>
+                  <option value="pieces">pieces</option>
                   <option value="pcs">pcs</option>
                 </select>
               </div>
-              <div className="textarea-container">
-                <textarea
-                  {...register(`items.${index}.description`)}
-                  className="form-control"
-                  placeholder="Description"
-                />
-                <VoiceInput
-                  onTextReceived={(text) => {
-                    setValue(`items.${index}.description`, text);
-                  }}
-                  isRecording={isRecording}
-                  setIsRecording={setIsRecording}
-                />
+
+              <div className="form-row">
+                <div className="description-container">
+                  <textarea
+                    {...register(`items.${index}.description`)}
+                    placeholder="Description (or use voice input)"
+                    className="description-input"
+                  />
+                  <div className="voice-input-container">
+                    <VoiceInput
+                      onTextReceived={(text) => setValue(`items.${index}.description`, text)}
+                      isRecording={isRecording}
+                      setIsRecording={setIsRecording}
+                    />
+                  </div>
+                </div>
               </div>
+
+              {fields.length > 1 && (
+                <button
+                  type="button"
+                  className="remove-button"
+                  onClick={() => remove(index)}
+                >
+                  Remove Item
+                </button>
+              )}
             </div>
           ))}
         </div>
