@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, make_response
 from flask_cors import CORS
 from pymongo import MongoClient
 from datetime import datetime
@@ -10,21 +10,19 @@ import re
 # Load environment variables
 load_dotenv()
 
-# Initialize Flask app with static files configuration
-app = Flask(__name__, static_folder='static', static_url_path='')
-CORS(app, resources={
-    r"/*": {
-        "origins": "*",
-        "allow_headers": ["Content-Type"],
-        "expose_headers": ["Content-Type"],
-        "supports_credentials": True
-    }
-})
+# Initialize Flask app
+app = Flask(__name__, static_folder='dist', static_url_path='')
+CORS(app)
 
 # Initialize MongoDB
-mongo_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
-client = MongoClient(mongo_uri)
-db = client.shopping_list
+try:
+    mongo_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
+    client = MongoClient(mongo_uri)
+    db = client.shopping_list
+    print("✅ MongoDB Connection Successful!")
+except Exception as e:
+    print("❌ MongoDB Connection Error:", str(e))
+    raise e
 
 # Initialize the multilingual NER pipeline
 try:
@@ -110,18 +108,25 @@ def extract_entities(text):
             'description': text
         }
 
-# Serve React app - root route
-@app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
-def serve(path):
+@app.route('/')
+def serve():
     try:
-        if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
-            return send_from_directory(app.static_folder, path)
-        else:
-            return send_from_directory(app.static_folder, 'index.html')
+        response = make_response(send_from_directory(app.static_folder, 'index.html'))
+        response.headers['Content-Type'] = 'text/html; charset=utf-8'
+        return response
     except Exception as e:
-        print(f"Error serving static files: {e}")
-        return jsonify({"error": "File not found"}), 404
+        print(f"Error serving index.html: {e}")
+        return "Server Error", 500
+
+@app.route('/<path:path>')
+def serve_static(path):
+    try:
+        if path and os.path.exists(os.path.join(app.static_folder, path)):
+            return send_from_directory(app.static_folder, path)
+        return "Not Found", 404
+    except Exception as e:
+        print(f"Error serving static file {path}: {e}")
+        return "Server Error", 500
 
 # API endpoint for saving shopping lists
 @app.route('/api', methods=['POST', 'OPTIONS'])
@@ -188,20 +193,6 @@ def server_error(e):
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 3000))
-    print("🚀 Server starting on https://localhost:" + str(port))
-    
-    try:
-        app.run(
-            host='0.0.0.0',
-            port=port,
-            ssl_context='adhoc',
-            debug=True
-        )
-    except Exception as e:
-        print(f"Error starting server: {e}")
-        print("Falling back to HTTP (not secure)")
-        app.run(
-            host='0.0.0.0',
-            port=port,
-            debug=True
-        )
+    print("🚀 Server starting on http://localhost:" + str(port))
+    print(f"📁 Serving static files from: {os.path.abspath(app.static_folder)}")
+    app.run(host='0.0.0.0', port=port, debug=True)
