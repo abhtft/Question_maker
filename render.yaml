@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: bazaarseva-app
+    env: python
+    buildCommand: pip install -r requirements.txt && npm install && npm run build
+    startCommand: gunicorn server:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.0
+      - key: MONGODB_URI
+        sync: false # This will be set in Render dashboard
+      - key: ASSEMBLYAI_API_KEY
+        sync: false # This will be set in Render dashboard 

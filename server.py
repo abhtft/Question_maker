@@ -5,9 +5,9 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 import nltk
-from nltk.tokenize import word_tokenize
-from nltk.tag import pos_tag
 import re
+import assemblyai as aai
+from text_analyzer import analyze_text, ShoppingItemParser
 
 # Load environment variables
 load_dotenv()
@@ -26,121 +26,29 @@ CORS(app, resources={
 
 # Initialize MongoDB
 try:
-    mongo_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
-    client = MongoClient(mongo_uri)
-    db = client.shopping_list
+    MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017')
+    client = MongoClient(MONGODB_URI)
+    db = client.shopping_list_db
     print("✅ MongoDB Connection Successful!")
 except Exception as e:
-    print("❌ MongoDB Connection Error:", str(e))
-    raise e
+    print("❌ MongoDB Connection Error:", e)
+    db = None
 
 # Download required NLTK data
 try:
-    nltk.download('punkt', quiet=True)
-    nltk.download('averaged_perceptron_tagger', quiet=True)
+    nltk.download('punkt')
+    nltk.download('averaged_perceptron_tagger')
     nltk.download('maxent_ne_chunker', quiet=True)
     nltk.download('words', quiet=True)
     print("✅ NLP resources downloaded successfully")
 except Exception as e:
     print(f"❌ Error downloading NLP resources: {e}")
 
-def extract_entities(text):
-    """Extract entities from text using NLTK."""
-    try:
-        # Tokenize and tag the text
-        tokens = word_tokenize(text)
-        tagged = pos_tag(tokens)
-        
-        # Initialize variables with None to indicate no value found
-        quantity = None
-        brand = None
-        item_name = None
-        unit = None
-        
-        # Extract numbers for quantity (optional)
-        numbers = re.findall(r'\d+(?:\.\d+)?', text)
-        if numbers:
-            quantity = numbers[0]
-            # Look for units after the number
-            num_index = text.find(numbers[0])
-            if num_index != -1:
-                after_num = text[num_index + len(numbers[0]):].strip()
-                units = ['kg', 'g', 'l', 'ml', 'piece', 'pieces', 'pcs']
-                for u in units:
-                    if after_num.lower().startswith(u):
-                        unit = u
-                        break
-        
-        # Extract brand (optional)
-        words = text.lower().split()
-        for i, word in enumerate(words):
-            # Check if current word is "brand"
-            if word == 'brand':
-                # Check word before "brand"
-                if i > 0:
-                    brand = words[i-1].title()
-                # If no brand found before, check word after "brand"
-                elif i + 1 < len(words):
-                    brand = words[i+1].title()
-                break
-            # Check if current word ends with "brand"
-            elif word.endswith('brand') and len(word) > 5:
-                brand = word[:-5].title()
-                break
-        
-        # If no brand found with "brand" keyword, look for known brand names
-        if not brand:
-            known_brands = ['cinthol', 'lux', 'dettol', 'lifebuoy']
-            for word in words:
-                if word in known_brands:
-                    brand = word.title()
-                    break
-        
-        # Extract item name (required - will use the input text if no noun found)
-        skip_words = ['brand', 'company', 'make', 'expiry', 'date', 'dekh', 'ke']
-        skip_words.extend(['kg', 'g', 'l', 'ml', 'piece', 'pieces', 'pcs'])
-        if brand:
-            skip_words.append(brand.lower())
-            
-        item_words = []
-        for word, tag in tagged:
-            # Skip numbers, units, brand-related words, and other utility words
-            if (word.lower() not in skip_words and 
-                not re.match(r'\d+', word)):
-                if tag.startswith('NN'):  # If it's a noun
-                    item_words.append(word)
-        
-        # Clean up item name
-        if item_words:
-            item_name = ' '.join(item_words).strip()
-        else:
-            # Fallback: use first noun if no other nouns found
-            for word, tag in tagged:
-                if tag.startswith('NN') and word.lower() not in skip_words:
-                    item_name = word
-                    break
-            # If still no item name, use first token
-            if not item_name and tokens:
-                item_name = tokens[0]
-            
-        # Convert None values to empty strings in the response
-        return {
-            'quantity': quantity if quantity is not None else '',
-            'brand': brand if brand is not None else '',
-            'itemName': item_name if item_name is not None else text,  # Use original text as fallback
-            'unit': unit if unit is not None else '',
-            'description': text
-        }
-    except Exception as e:
-        print(f"Error in extract_entities: {e}")
-        # Return minimal response with original text preserved
-        return {
-            'quantity': '',
-            'brand': '',
-            'itemName': text,  # Use original text as fallback
-            'unit': '',
-            'description': text
-        }
+# Configure AssemblyAI
+aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
+
+# Initialize the shopping item parser
+parser = ShoppingItemParser()
 
 @app.route('/')
 def serve():
@@ -162,31 +70,22 @@ def serve_static(path):
         print(f"Error serving static file {path}: {e}")
         return "Server Error", 500
 
-@app.route('/api/analyze', methods=['POST', 'OPTIONS'])
-def analyze_text():
-    if request.method == 'OPTIONS':
-        return '', 200
-        
+@app.route('/api/analyze', methods=['POST'])
+def analyze():
     try:
         data = request.json
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-            
         text = data.get('text', '')
+        
         if not text:
             return jsonify({'error': 'No text provided'}), 400
             
-        print(f"Analyzing text: {text}")
-        result = extract_entities(text)
-        print(f"Analysis result: {result}")
+        # Use our new text analyzer
+        result = analyze_text(text)
         return jsonify(result)
         
     except Exception as e:
-        print(f"❌ Error in text analysis: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        print(f"Error in analyze endpoint: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api', methods=['POST', 'OPTIONS'])
 def save_shopping_list():
@@ -222,6 +121,45 @@ def health_check():
         'mongodb': 'connected'
     }), 200
 
+@app.route('/api/transcribe', methods=['POST', 'OPTIONS'])
+def transcribe_audio():
+    if request.method == 'OPTIONS':
+        return '', 200
+        
+    try:
+        if 'audio' not in request.files:
+            return jsonify({'error': 'No audio file provided'}), 400
+            
+        audio_file = request.files['audio']
+        if not audio_file.filename:
+            return jsonify({'error': 'No audio file selected'}), 400
+            
+        # Save the audio file temporarily
+        temp_path = os.path.join('temp', audio_file.filename)
+        os.makedirs('temp', exist_ok=True)
+        audio_file.save(temp_path)
+        
+        # Transcribe using AssemblyAI
+        transcriber = aai.Transcriber()
+        transcript = transcriber.transcribe(temp_path)
+        
+        # Clean up the temporary file
+        os.remove(temp_path)
+        
+        if transcript.error:
+            return jsonify({'error': transcript.error}), 500
+            
+        return jsonify({
+            'text': transcript.text,
+            'confidence': transcript.confidence
+        })
+        
+    except Exception as e:
+        print(f"❌ Error in transcription: {str(e)}")
+        return jsonify({
+            'error': str(e)
+        }), 500
+
 @app.errorhandler(404)
 def not_found(e):
     return jsonify({"error": "Resource not found"}), 404
@@ -231,7 +169,7 @@ def server_error(e):
     return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 3000))
-    print("🚀 Server starting on http://localhost:" + str(port))
+    port = int(os.environ.get('PORT', 3000))
+    print(f"🚀 Server starting on http://localhost:{port}")
     print(f"📁 Serving static files from: {os.path.abspath(app.static_folder)}")
     app.run(host='0.0.0.0', port=port, debug=True)

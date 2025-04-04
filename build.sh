@@ -8,12 +8,12 @@ pip install -r requirements.txt --no-cache-dir
 
 echo "Python dependencies installed successfully."
 
-# Build React frontend
+
 echo "Building React frontend..."
 npm install
 npm run build
 
-# Verify the build output
+
 if [ ! -d "dist" ]; then
     echo "Error: dist directory not found after build"
     exit 1
@@ -25,3 +25,5 @@ if [ ! -f "dist/index.html" ]; then
 fi
 
 echo "Build completed successfully!" 
+# Run the server
+python server.py

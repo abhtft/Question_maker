@@ -1,30 +1,30 @@
-# Dependencies
-node_modules/
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-venv/
 .env
+.venv
+venv/
+ENV/
 
-# Build
+# Node
+node_modules/
 dist/
-build/
-*.egg-info/
+.DS_Store
 
 # IDE
-.idea/
 .vscode/
-*.swp
-*.swo
+.idea/
 
 # Logs
 *.log
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+
+# Build
+build/
+*.egg-info/
 
 # System Files
-.DS_Store
 Thumbs.db
 
 # Environment
