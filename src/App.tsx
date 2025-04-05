@@ -148,14 +148,20 @@ const App: React.FC = () => {
     const billNumber = `BILL-${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}-${Math.floor(Math.random() * 10000)}`;
     
     const detailsX = 20;
+    doc.setFontSize(14);
+    doc.setFont('black', 'bold');
+    const dateText = `Date: ${formattedDate}`;
+    const dateWidth = doc.getStringUnitWidth(dateText) * doc.getFontSize() / doc.internal.scaleFactor;
+    doc.text(dateText, (pageWidth - dateWidth) / 2, y);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    y += 10;
     doc.text(`Bill Number: ${billNumber}`, detailsX, y);
-    y += 15;
-    doc.text(`Date: ${formattedDate} IST`, detailsX, y);
-    y += 15;
+    y += 10;
     doc.text(`Customer Name: ${getValues('customerName')}`, detailsX, y);
-    y += 15;
+    y += 10;
     doc.text(`Favorite Shop: ${getValues('favoriteShop')}`, detailsX, y);
-    y += 20;
+    y += 10;
 
     // Table settings
     const startX = 20;
@@ -347,7 +353,7 @@ const App: React.FC = () => {
                 <div className="description-container">
                   <textarea
                     {...register(`items.${index}.description`)}
-                    placeholder="Text Analyzer (or use voice input).Ex:1 litre milk from Farm Fresh with medium priority and  Ensure they are fresh."
+                    placeholder="Text Analyzer (or use voice input).FOR BEST RESULTS: Ex:1[QUANTITY] litre [UNIT] milk [ITEM NAME] from [BRAND] with [PRIORITY] priority and [DETAILS REST] Ensure they are fresh."
                     className="description-input"
                   />
                   <div className="button-container">
