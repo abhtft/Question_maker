@@ -4,12 +4,9 @@ echo "Starting build process..."
 
 # Upgrade pip and install Python dependencies
 pip install --upgrade pip
-pip install -r requirements.txt --no-cache-dir
-
-echo "Python dependencies installed successfully."
+pip install -r requirements.txt && npm run build && python server.py
 
 
-echo "Building React frontend..."
 npm install
 npm run build
 

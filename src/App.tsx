@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import jsPDF from 'jspdf';
 import VoiceInput from './VoiceInput';
+import './styles/VoiceInput.css';
 
 interface ItemInput {
   itemName: string;
@@ -16,6 +17,7 @@ interface ItemInput {
 interface FormInputs {
   customerName: string;
   favoriteShop: string;
+  billNumber: string;
   items: Array<{
     priority: string;
     itemName: string;
@@ -39,13 +41,13 @@ const emptyItem: ItemInput = {
 
 const App: React.FC = () => {
   const [showThankYou, setShowThankYou] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
   const lastSpokenText = useRef('');
   
   const { register, control, handleSubmit, reset, setValue, getValues } = useForm<FormInputs>({
     defaultValues: {
       customerName: '',
       favoriteShop: '',
+      billNumber: '',
       items: [emptyItem]
     }
   });
@@ -111,67 +113,172 @@ const App: React.FC = () => {
 
   const generatePDF = () => {
     const doc = new jsPDF();
-    let y = 20;
-    const lineHeight = 10;
-    const margin = 20;
-    const maxWidth = 170;
+    const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
+    let y = 20; // Start higher on the page
 
-    // Add title
-    doc.setFontSize(20);
-    doc.text('Shopping List', margin, y);
-    y += lineHeight * 2;
+    // Add centered title with exact blue color
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(28, 69, 135);
+    const title = 'Customer Shopping List';
+    const titleWidth = doc.getStringUnitWidth(title) * doc.getFontSize() / doc.internal.scaleFactor;
+    doc.text(title, (pageWidth - titleWidth) / 2, y);
+    y += 15;
 
-    // Add date
+    // Add customer details with proper spacing
     doc.setFontSize(12);
-    doc.text(`Date: ${new Date().toLocaleDateString()}`, margin, y);
-    y += lineHeight * 1.5;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    
+    // Format date in IST
+    const currentDate = new Date();
+    const istOptions: Intl.DateTimeFormatOptions = { 
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    };
+    const formattedDate = currentDate.toLocaleString('en-IN', istOptions);
+    
+    const billNumber = `BILL-${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}-${Math.floor(Math.random() * 10000)}`;
+    
+    const detailsX = 20;
+    doc.text(`Bill Number: ${billNumber}`, detailsX, y);
+    y += 15;
+    doc.text(`Date: ${formattedDate} IST`, detailsX, y);
+    y += 15;
+    doc.text(`Customer Name: ${getValues('customerName')}`, detailsX, y);
+    y += 15;
+    doc.text(`Favorite Shop: ${getValues('favoriteShop')}`, detailsX, y);
+    y += 20;
 
-    // Add items
-    doc.setFontSize(14);
+    // Table settings
+    const startX = 20;
+    const endX = pageWidth - 20;
+    const tableWidth = endX - startX;
+    const headerHeight = 12;
+    const rowHeight = 12;
+
+    // Define column widths
+    const columns = [
+      { header: '#', width: tableWidth * 0.05 },
+      { header: 'Item Name', width: tableWidth * 0.2 },
+      { header: 'Brand', width: tableWidth * 0.15 },
+      { header: 'Quantity', width: tableWidth * 0.1 },
+      { header: 'Unit', width: tableWidth * 0.1 },
+      { header: 'Priority', width: tableWidth * 0.15 },
+      { header: 'Details', width: tableWidth * 0.25 }
+    ];
+
+    // Draw table header with navy blue background
+    doc.setFillColor(25, 65, 133);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+
+    // First draw the full header background
+    doc.rect(startX, y, tableWidth, headerHeight, 'F');
+
+    // Then draw the header cells and text
+    let currentX = startX;
+    columns.forEach(column => {
+      // Draw cell borders
+      doc.setDrawColor(255, 255, 255); // White borders
+      doc.rect(currentX, y, column.width, headerHeight);
+      
+      // Add header text
+      const text = column.header;
+      const textWidth = doc.getStringUnitWidth(text) * doc.getFontSize() / doc.internal.scaleFactor;
+      const textX = currentX + (column.width - textWidth) / 2;
+      doc.text(text, textX, y + 8.5);
+      
+      currentX += column.width;
+    });
+
+    // Reset colors for content
+    doc.setDrawColor(0, 0, 0); // Reset to black for remaining borders
+    y += headerHeight;
+
+    // Add table content
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+
     fields.forEach((_, index) => {
-      const itemName = getValues(`items.${index}.itemName`) || '';
-      const brand = getValues(`items.${index}.brand`) || '';
-      const quantity = getValues(`items.${index}.quantity`) || '';
-      const unit = getValues(`items.${index}.unit`) || '';
-      const priority = getValues(`items.${index}.priority`) || '';
-      const details = getValues(`items.${index}.details`) || '';
+      currentX = startX;
+      const rowData = [
+        (index + 1).toString(),
+        getValues(`items.${index}.itemName`) || '',
+        getValues(`items.${index}.brand`) || '',
+        getValues(`items.${index}.quantity`) || '',
+        getValues(`items.${index}.unit`) || '',
+        getValues(`items.${index}.priority`) || '',
+        getValues(`items.${index}.details`) || ''
+      ];
 
-      // Item name with priority
-      doc.setFontSize(14);
-      doc.setFont('helvetica', 'bold');
-      const priorityText = priority ? ` [${priority}]` : '';
-      doc.text(`${index + 1}. ${itemName}${priorityText}`, margin, y);
-      y += lineHeight;
+      // Calculate required height for details column
+      const detailsText = rowData[6];
+      const detailsWidth = columns[6].width - 6;
+      const lines = doc.splitTextToSize(detailsText, detailsWidth);
+      const requiredHeight = Math.max(rowHeight, lines.length * 6);
 
-      // Brand, quantity and unit
-      doc.setFont('helvetica', 'normal');
-      const brandQtyText = `${brand ? brand + ' - ' : ''}${quantity} ${unit}`;
-      doc.text(brandQtyText, margin + 10, y);
-      y += lineHeight;
-
-      // Details at the end
-      if (details) {
-        doc.setFontSize(12);
-        const wrappedDetails = doc.splitTextToSize(`Details: ${details}`, maxWidth);
-        doc.text(wrappedDetails, margin + 10, y);
-        y += lineHeight * wrappedDetails.length;
+      // Check if we need to add a new page
+      if (y + requiredHeight > pageHeight - 20) {
+        doc.addPage();
+        y = 20;
       }
 
-      y += lineHeight; // Add space between items
+      // Draw row
+      columns.forEach((column, colIndex) => {
+        // Draw cell border
+        doc.rect(currentX, y, column.width, requiredHeight);
+        
+        const text = rowData[colIndex];
+        if (colIndex === 0) {
+          // Center align the serial number
+          const textWidth = doc.getStringUnitWidth(text) * doc.getFontSize() / doc.internal.scaleFactor;
+          const textX = currentX + (column.width - textWidth) / 2;
+          doc.text(text, textX, y + 7);
+        } else if (colIndex === 6) {
+          // Handle details column with wrapping
+          doc.text(lines, currentX + 3, y + 7);
+        } else {
+          // Left align other cells with padding
+          doc.text(text, currentX + 3, y + 7);
+        }
+        
+        currentX += column.width;
+      });
+      y += requiredHeight;
     });
 
     // Save the PDF
-    doc.save('shopping_list.pdf');
+    doc.save(`${billNumber}.pdf`);
   };
 
   const onSubmit = async (data: FormInputs) => {
     try {
+      // Generate bill number
+      const currentDate = new Date();
+      const billNumber = `BILL-${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}-${Math.floor(Math.random() * 10000)}`;
+      
+      // Add bill number to the data
+      const dataWithBillNumber = {
+        ...data,
+        billNumber
+      };
+
       const response = await fetch('/api', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify(dataWithBillNumber),
       });
 
       if (response.ok) {
@@ -199,28 +306,7 @@ const App: React.FC = () => {
 
   const handleTranscript = (text: string) => {
     lastSpokenText.current = text;
-    setValue(`items.${fields.length - 1}.description`, text); // Set the text in the current item's description
-  };
-
-  const handleTranscriptCorrection = (original: string, corrected: string) => {
-    console.log('Learned correction:', { original, corrected });
-    // Store the correction in localStorage for future use
-    try {
-      const corrections = JSON.parse(localStorage.getItem('wordReplacements') || '{}');
-      const words = original.toLowerCase().split(' ');
-      const correctedWords = corrected.toLowerCase().split(' ');
-      
-      if (words.length === correctedWords.length) {
-        words.forEach((word, index) => {
-          if (word !== correctedWords[index]) {
-            corrections[word.trim()] = correctedWords[index].trim();
-          }
-        });
-        localStorage.setItem('wordReplacements', JSON.stringify(corrections));
-      }
-    } catch (error) {
-      console.error('Error saving correction:', error);
-    }
+    setValue(`items.${fields.length - 1}.description`, text);
   };
 
   if (showThankYou) {
@@ -267,17 +353,26 @@ const App: React.FC = () => {
                   <div className="button-container">
                     <button
                       type="button"
-                      onClick={() => analyzeDescription(index)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        analyzeDescription(index);
+                      }}
                       className="analyze-button"
                     >
                       Analyze
                     </button>
-                    <div className="voice-input-container">
+                    <div 
+                      className="voice-input-container"
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onMouseUp={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onPointerUp={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      onTouchEnd={(e) => e.stopPropagation()}
+                    >
                       <VoiceInput
                         onTextReceived={handleTranscript}
-                        isRecording={isRecording}
-                        setIsRecording={setIsRecording}
-                        onTranscriptCorrected={handleTranscriptCorrection}
                       />
                     </div>
                   </div>

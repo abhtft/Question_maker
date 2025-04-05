@@ -6,8 +6,9 @@ import os
 from dotenv import load_dotenv
 import nltk
 import re
-import assemblyai as aai
+#import assemblyai as aai
 from text_analyzer import analyze_text, ShoppingItemParser
+import pytz
 
 # Load environment variables
 load_dotenv()
@@ -28,7 +29,7 @@ CORS(app, resources={
 try:
     MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017')
     client = MongoClient(MONGODB_URI)
-    db = client.shopping_list_db
+    db = client.ShoppingV3_Voice_API
     print("✅ MongoDB Connection Successful!")
 except Exception as e:
     print("❌ MongoDB Connection Error:", e)
@@ -45,7 +46,7 @@ except Exception as e:
     print(f"❌ Error downloading NLP resources: {e}")
 
 # Configure AssemblyAI
-aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
+#aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
 
 # Initialize the shopping item parser
 parser = ShoppingItemParser()
@@ -99,13 +100,20 @@ def save_shopping_list():
             
         print("📥 Received data at /api:", data)
 
-        data['created_at'] = datetime.utcnow()
+        # Convert UTC to IST and format up to seconds
+        ist = pytz.timezone('Asia/Kolkata')
+        utc_now = datetime.utcnow()
+        ist_now = utc_now.replace(tzinfo=pytz.UTC).astimezone(ist)
+        data['created_at'] = ist_now.strftime('%Y-%m-%d %H:%M:%S')
+
         result = db.lists.insert_one(data)
         print("✅ Saved to MongoDB with ID:", result.inserted_id)
+        print("📝 Bill Number:", data['billNumber'])
 
         return jsonify({
             'success': True,
-            'id': str(result.inserted_id)
+            'id': str(result.inserted_id),
+            'billNumber': data['billNumber']
         }), 201
     except Exception as e:
         print("❌ Error while processing /api request:", str(e))
@@ -123,42 +131,51 @@ def health_check():
 
 @app.route('/api/transcribe', methods=['POST', 'OPTIONS'])
 def transcribe_audio():
-    if request.method == 'OPTIONS':
-        return '', 200
+    """
+    NOTE: We are using Web Speech API directly in the frontend for faster transcription.
+    This endpoint is kept for reference but not used.
+    """
+    # if request.method == 'OPTIONS':
+    #     return '', 200
         
-    try:
-        if 'audio' not in request.files:
-            return jsonify({'error': 'No audio file provided'}), 400
+    # try:
+    #     if 'audio' not in request.files:
+    #         return jsonify({'error': 'No audio file provided'}), 400
             
-        audio_file = request.files['audio']
-        if not audio_file.filename:
-            return jsonify({'error': 'No audio file selected'}), 400
+    #     audio_file = request.files['audio']
+    #     if not audio_file.filename:
+    #         return jsonify({'error': 'No audio file selected'}), 400
             
-        # Save the audio file temporarily
-        temp_path = os.path.join('temp', audio_file.filename)
-        os.makedirs('temp', exist_ok=True)
-        audio_file.save(temp_path)
+    #     # Save the audio file temporarily
+    #     temp_path = os.path.join('temp', audio_file.filename)
+    #     os.makedirs('temp', exist_ok=True)
+    #     audio_file.save(temp_path)
         
-        # Transcribe using AssemblyAI
-        transcriber = aai.Transcriber()
-        transcript = transcriber.transcribe(temp_path)
+    #     # Transcribe using AssemblyAI
+    #     transcriber = aai.Transcriber()
+    #     transcript = transcriber.transcribe(temp_path)
         
-        # Clean up the temporary file
-        os.remove(temp_path)
+    #     # Clean up the temporary file
+    #     os.remove(temp_path)
         
-        if transcript.error:
-            return jsonify({'error': transcript.error}), 500
+    #     if transcript.error:
+    #         return jsonify({'error': transcript.error}), 500
             
-        return jsonify({
-            'text': transcript.text,
-            'confidence': transcript.confidence
-        })
+    #     return jsonify({
+    #         'text': transcript.text,
+    #         'confidence': transcript.confidence
+    #     })
         
-    except Exception as e:
-        print(f"❌ Error in transcription: {str(e)}")
-        return jsonify({
-            'error': str(e)
-        }), 500
+    # except Exception as e:
+    #     print(f"❌ Error in transcription: {str(e)}")
+    #     return jsonify({
+    #         'error': str(e)
+    #     }), 500
+    
+    # Return empty response since we're using Web Speech API
+
+    #any one side web speech API was needed to be used
+    return jsonify({'message': 'Using Web Speech API instead'}), 200
 
 @app.errorhandler(404)
 def not_found(e):
@@ -170,6 +187,19 @@ def server_error(e):
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 3000))
-    print(f"🚀 Server starting on http://localhost:{port}")
+    print(f"�� Server starting on https://localhost:{port}")
     print(f"📁 Serving static files from: {os.path.abspath(app.static_folder)}")
-    app.run(host='0.0.0.0', port=port, debug=True)
+    
+    # Check if SSL certificates exist, if not generate them
+    if not (os.path.exists('cert.pem') and os.path.exists('key.pem')):
+        print("🔒 Generating SSL certificates...")
+        from generate_cert import generate_self_signed_cert
+        generate_self_signed_cert()
+    
+    # Run with SSL
+    app.run(
+        host='0.0.0.0',
+        port=port,
+        debug=True,
+        ssl_context=('cert.pem', 'key.pem')
+    )

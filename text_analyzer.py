@@ -274,3 +274,8 @@ shopping_parser = ShoppingItemParser()
 def analyze_text(text):
     """Main function to analyze shopping item text"""
     return shopping_parser.parse_with_context(text) 
+
+if __name__ == '__main__':
+    text='3 packets pasta from Italian Delight with medium priority and make sure they are whole wheat.'
+    result=analyze_text(text)
+    #print(result)
