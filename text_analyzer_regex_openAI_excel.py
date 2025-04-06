@@ -7,6 +7,7 @@ import time
 from functools import lru_cache
 import pandas as pd
 from datetime import datetime
+import httpx
 
 # Load environment variables
 load_dotenv()
@@ -20,16 +21,23 @@ if api_key:
 else:
     print("No API key found!")
 
-# Set up OpenAI client
+# Create a custom HTTP client without proxies
+http_client = httpx.Client(
+    base_url="https://api.openai.com/v1",
+    timeout=60.0,
+    follow_redirects=True
+)
+
+# Set up OpenAI client with the custom HTTP client
 try:
-    client = OpenAI(
+    client = openai.OpenAI(
         api_key=api_key,
-        max_retries=3,
-        timeout=30.0
+        http_client=http_client
     )
     print("OpenAI client initialized successfully")
 except Exception as e:
     print(f"Error initializing OpenAI client: {e}")
+    raise
     
 class ShoppingItemParser:
     def __init__(self):
