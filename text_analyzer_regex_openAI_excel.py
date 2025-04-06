@@ -12,33 +12,25 @@ import httpx
 # Load environment variables
 load_dotenv()
 
-# Get the API key
-api_key = os.getenv('OPENAI_API_KEY')
-
-# Print the first few characters of the API key (for verification)
-if api_key:
-    print(f"API key loaded: {api_key[:5]}...")
-else:
-    print("No API key found!")
-
-# Create a custom HTTP client without proxies
+# Create custom HTTP client without proxies
 http_client = httpx.Client(
     base_url="https://api.openai.com/v1",
     timeout=60.0,
     follow_redirects=True
 )
 
-# Set up OpenAI client with the custom HTTP client
-try:
-    client = openai.OpenAI(
-        api_key=api_key,
-        http_client=http_client
-    )
-    print("OpenAI client initialized successfully")
-except Exception as e:
-    print(f"Error initializing OpenAI client: {e}")
-    raise
-    
+# Set up OpenAI client
+client = openai.OpenAI(
+    api_key=os.getenv('OPENAI_API_KEY'),
+    http_client=http_client
+)
+
+# Print the first few characters of the API key (for verification)
+if client.api_key:
+    print(f"API key loaded: {client.api_key[:5]}...")
+else:
+    print("No API key found!")
+
 class ShoppingItemParser:
     def __init__(self):
         self.units = {

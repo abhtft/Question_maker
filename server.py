@@ -15,6 +15,7 @@ import time
 from functools import lru_cache
 import pandas as pd
 from bson import ObjectId
+import httpx
 
 # Load environment variables
 load_dotenv()
@@ -57,14 +58,29 @@ except Exception as e:
 # Initialize the shopping item parser
 parser = ShoppingItemParser()
 
-# Set up OpenAI API key
-openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+# Initialize OpenAI client
+try:
+    # Create custom HTTP client without proxies
+    http_client = httpx.Client(
+        base_url="https://api.openai.com/v1",
+        timeout=60.0,
+        follow_redirects=True
+    )
+    
+    openai_client = openai.OpenAI(
+        api_key=os.getenv('OPENAI_API_KEY'),
+        http_client=http_client
+    )
+    print("✅ OpenAI client initialized successfully")
+except Exception as e:
+    print(f"❌ Error initializing OpenAI client: {e}")
+    raise
 
 # Set up MongoDB Atlas connection
-MONGODB_URI = os.getenv('MONGODB_URI')  # Make sure to add this to your .env file
+MONGODB_URI = os.getenv('MONGODB_URI')
 mongo_client = MongoClient(MONGODB_URI)
-db = mongo_client['grocery_db']  # database name
-collection = db['cereal_analysis']  # collection name
+db = mongo_client['grocery_db']
+collection = db['cereal_analysis']
 
 @app.route('/')
 def serve():
