@@ -1,6 +1,61 @@
 import re
 import nltk
 from nltk import word_tokenize, pos_tag
+import spacy
+from google.cloud import language_v1
+from google.oauth2 import service_account
+
+# Load the spaCy model
+nlp = spacy.load("en_core_web_sm")
+
+# Set up Google Cloud Natural Language API client
+credentials = service_account.Credentials.from_service_account_file('path/to/your/service-account-file.json')
+client = language_v1.LanguageServiceClient(credentials=credentials)
+
+# TextRazor API key
+API_KEY = '27afd7a49772ee31e35c2c78bcd111d74263bcb5f60d064373768bb8'
+url = "https://api.textrazor.com"
+
+# Example text
+text = "2 liters of milk from Farm Fresh with high priority."
+
+# Step 1: Preprocess with Regex
+quantity_pattern = r'(\d+)\s*(liters?|litre|kg|g|pcs|units?)'
+quantities = re.findall(quantity_pattern, text)
+
+# Step 2: Analyze with spaCy
+doc = nlp(text)
+spacy_entities = [(ent.text, ent.label_) for ent in doc.ents]
+
+# Step 3: Analyze with TextRazor
+data = {'text': text, 'extractors': 'entities'}
+headers = {'x-api-key': API_KEY}
+response = requests.post(url, data=data, headers=headers)
+textrazor_entities = response.json().get('response', {}).get('entities', [])
+
+# Step 4: Combine Results
+combined_results = {
+    'quantities': quantities,
+    'spacy_entities': spacy_entities,
+    'textrazor_entities': textrazor_entities
+}
+
+#print(combined_results)
+
+############
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 class ShoppingItemParser:
     def __init__(self):
@@ -20,7 +75,23 @@ class ShoppingItemParser:
         ]
         
         # Priority indicators with case variations
-      
+        self.priorities = {
+            'HIGH': {
+                'keywords': ['high', 'urgent', 'important', 'asap', 'quick', 'immediately',
+                           'rush', 'priority', 'critical', 'essential', 'vital'],
+                'display': 'High'  # Display format
+            },
+            'MEDIUM': {
+                'keywords': ['medium', 'normal', 'regular', 'standard', 'moderate',
+                           'average', 'ordinary', 'usual'],
+                'display': 'Medium'  # Display format
+            },
+            'LOW': {
+                'keywords': ['low', 'can wait', 'not urgent', 'whenever', 'flexible',
+                           'casual', 'relaxed', 'later', 'eventually'],
+                'display': 'Low'  # Display format
+            }
+        }
         
         self.connecting_words = ['of', 'from', 'with', 'and', 'the']
         
@@ -55,7 +126,7 @@ class ShoppingItemParser:
             if phrase in text:
                 score += 2  # Give higher score for exact "X priority" matches
                 matched_words.append(phrase)
-                print(f"Found exact priority phrase: {phrase}")
+                #print(f"Found exact priority phrase: {phrase}")
                 return score  # Return immediately if we find an exact priority phrase
         
         # If no exact priority phrase found, look for individual words
@@ -64,7 +135,7 @@ class ShoppingItemParser:
             if word in priority_keywords:
                 score += 1
                 matched_words.append(word)
-                print(f"Found priority keyword: {word}")
+                #print(f"Found priority keyword: {word}")
                 continue
                 
             # Check for word within priority keyword phrases
@@ -73,16 +144,16 @@ class ShoppingItemParser:
                     if keyword in text:
                         score += 1
                         matched_words.append(keyword)
-                        print(f"Found multi-word priority: {keyword}")
+                        #print(f"Found multi-word priority: {keyword}")
                         break
                 # Check if keyword is part of the word
                 elif keyword in word:
                     score += 0.5
                     matched_words.append(word)
-                    print(f"Found partial priority match: {word} contains {keyword}")
+                    #print(f"Found partial priority match: {word} contains {keyword}")
                     break
         
-        print(f"Priority score: {score} with matched words: {matched_words}")
+        #print(f"Priority score: {score} with matched words: {matched_words}")
         return score
     
     def _extract_priority_from_text(self, text):
@@ -92,29 +163,36 @@ class ShoppingItemParser:
             
         # Normalize text
         text = self._normalize_text(text)
-        print(f"\nAnalyzing priority in text: {text}")
+        #print(f"\nAnalyzing priority in text: {text}")
         
         # Calculate priority scores
         scores = {}
         for level, priority_info in self.priorities.items():
             score = self._get_priority_score(text, priority_info['keywords'])
             scores[level] = score
-            print(f"Priority {priority_info['display']} score: {score}")
+            #print(f"Priority {priority_info['display']} score: {score}")
         
         # Get the priority level with highest score
         if any(scores.values()):
             max_priority = max(scores.items(), key=lambda x: x[1])
             if max_priority[1] > 0:
                 priority_level = max_priority[0]
-                print(f"Selected priority level: {self.priorities[priority_level]['display']} with score {max_priority[1]}")
+                #print(f"Selected priority level: {self.priorities[priority_level]['display']} with score {max_priority[1]}")
                 # Return the priority level in the exact format needed by frontend
                 return priority_level  # This will be 'HIGH', 'MEDIUM', or 'LOW'
         
-        print("No clear priority found, using default MEDIUM")
+        #print("No clear priority found, using default MEDIUM")
         return 'MEDIUM'  # Default priority in correct case
     
+    def analyze_with_google(self, text):
+        """Analyze text using Google Cloud Natural Language API."""
+        document = language_v1.Document(content=text, type_=language_v1.Document.Type.PLAIN_TEXT)
+        response = client.analyze_entities(document=document)
+        entities = [(entity.name, entity.type_) for entity in response.entities]
+        return entities
+
     def parse_with_context(self, text):
-        """Parse text using context windows and state tracking"""
+        """Parse text using context windows and state tracking."""
         try:
             result = {
                 'quantity': '',
@@ -122,134 +200,82 @@ class ShoppingItemParser:
                 'itemName': '',
                 'brand': '',
                 'priority': '',
-                'description': text,  # Keep original description
+                'description': text,
                 'details': ''
             }
             
-            # Normalize text while preserving original case
-            text = text.strip()
-            print(f"\nProcessing text: {text}")
+            # Step 1: Preprocess with Regex
+            quantity_match = self._extract_quantity_unit(text)
+            if quantity_match:
+                result['quantity'] = quantity_match['quantity']
+                result['unit'] = quantity_match['unit']
+                result['itemName'] = text.replace(quantity_match['matched_text'], '').strip()
             
-            # Split text into main parts using key markers
-            parts = {
-                'before_from': '',
-                'brand': '',
-                'priority': '',
-                'details': ''
-            }
+            # Step 2: Analyze with spaCy
+            doc = nlp(text)
+            for ent in doc.ents:
+                if ent.label_ == "PRODUCT":
+                    result['itemName'] = ent.text
             
-            # Split by "from" first
-            if ' from ' in text:
-                before_from, rest = text.split(' from ', 1)
-                parts['before_from'] = before_from.strip()
-                
-                # Split rest by "with" if exists
-                if ' with ' in rest:
-                    brand_part, priority_rest = rest.split(' with ', 1)
-                    parts['brand'] = brand_part.strip()
-                    
-                    # Split priority and details
-                    if ' and ' in priority_rest:
-                        priority_part, rest = priority_rest.split(' and ', 1)
-                        parts['priority'] = priority_part.strip()
-                        parts['details'] = rest.strip()
-                    else:
-                        parts['priority'] = priority_rest.strip()
-            else:
-                parts['before_from'] = text
+            # Step 3: Analyze with Google Cloud Natural Language API
+            google_entities = self.analyze_with_google(text)
+            for entity_name, entity_type in google_entities:
+                if entity_type == 'ORGANIZATION':
+                    result['brand'] = entity_name
             
-            print(f"Split parts: {parts}")
-            
-            # Extract quantity and unit from before_from
-            quantity_unit = self._extract_quantity_unit(parts['before_from'])
-            if quantity_unit:
-                result['quantity'] = quantity_unit['quantity']
-                result['unit'] = quantity_unit['unit']
-                # Remove quantity and unit from before_from to get item name
-                item_text = parts['before_from'].replace(quantity_unit['matched_text'], '').strip()
-                result['itemName'] = item_text
-            
-            # Process brand
-            if parts['brand']:
-                result['brand'] = parts['brand'].strip()
+            # Step 4: Extract details
+            details_pattern = r'with (.+?)(?:\s+and|\.$)'
+            details_match = re.search(details_pattern, text)
+            if details_match:
+                result['details'] = details_match.group(1).strip()
             
             # Process priority with semantic matching
-            print("\nProcessing priority...")
-            if parts['priority']:
-                print(f"Checking priority section: {parts['priority']}")
-                priority_level = self._extract_priority_from_text(parts['priority'])
-                if priority_level:
-                    result['priority'] = priority_level
-                else:
-                    # If no priority found in priority part, check full text
-                    print("Checking full text for priority...")
-                    priority_level = self._extract_priority_from_text(text)
-                    if priority_level:
-                        result['priority'] = priority_level
-                    else:
-                        result['priority'] = 'MEDIUM'  # default
-                        print(f"Using default priority: {self.priorities['MEDIUM']['display']}")
-            else:
-                # If no priority part found, check full text
-                print("No priority section found, checking full text...")
+            #print("\nProcessing priority...")
+            if result['itemName']:
+                #print(f"Checking full text for priority...")
                 priority_level = self._extract_priority_from_text(text)
                 if priority_level:
                     result['priority'] = priority_level
                 else:
                     result['priority'] = 'MEDIUM'  # default
-                    print(f"Using default priority: {self.priorities['MEDIUM']['display']}")
+                    #print(f"Using default priority: {self.priorities['MEDIUM']['display']}")
             
             # Process details
-            if parts['details']:
-                result['details'] = parts['details']
-            
-            # Clean up item name
             if result['itemName']:
                 # Remove any remaining connecting words
                 for word in self.connecting_words:
                     result['itemName'] = re.sub(fr'\b{word}\b', ' ', result['itemName'], flags=re.IGNORECASE)
                 result['itemName'] = ' '.join(result['itemName'].split())  # Clean up spaces
             
-            print(f"\nFinal result: {result}")
+            #print(f"\nFinal result: {result}")
             return result
             
         except Exception as e:
-            print(f"Error in parse_with_context: {e}")
+            #print(f"Error in parse_with_context: {e}")
             return {
                 'quantity': '',
                 'unit': '',
                 'itemName': text,
                 'brand': '',
                 'priority': 'MEDIUM',
-                'description': text,  # Keep original description
+                'description': text,
                 'details': ''
             }
     
     def _extract_quantity_unit(self, text):
-        """Extract quantity and unit using context"""
-        text = text.lower()
+        """Extract quantity and unit using regex."""
         for pattern in self.quantity_unit_patterns:
             match = re.search(pattern, text)
             if match:
                 quantity = match.group(1)
                 raw_unit = match.group(2)
-                
-                # Standardize unit
-                std_unit = None
-                for unit, variations in self.units.items():
-                    if raw_unit.rstrip('s') in variations:
-                        std_unit = unit
-                        break
-                
+                std_unit = next((unit for unit, variations in self.units.items() if raw_unit in variations), None)
                 if std_unit:
                     return {
                         'quantity': quantity,
                         'unit': std_unit,
                         'matched_text': match.group(0)
                     }
-        
-        # Debug print
-        print("No quantity-unit match found in:", text)
         return None
 
 # Initialize the global parser instance
@@ -261,5 +287,7 @@ def analyze_text(text):
 
 if __name__ == '__main__':
     text='3 packets pasta from Italian Delight with medium priority and make sure they are whole wheat.'
-    result=analyze_text(text)
+    print(analyze_text(text))
+
     #print(result)
+

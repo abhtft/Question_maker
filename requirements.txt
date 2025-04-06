@@ -13,3 +13,5 @@ en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_
 pyOpenSSL==23.2.0
 cryptography==41.0.7
 pytz==2023.3
+openai==1.1.0
+pandas==2.0.3

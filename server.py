@@ -9,6 +9,12 @@ import re
 #import assemblyai as aai
 from text_analyzer import analyze_text, ShoppingItemParser
 import pytz
+import openai
+import json
+import time
+from functools import lru_cache
+import pandas as pd
+from bson import ObjectId
 
 # Load environment variables
 load_dotenv()
@@ -50,6 +56,15 @@ except Exception as e:
 
 # Initialize the shopping item parser
 parser = ShoppingItemParser()
+
+# Set up OpenAI API key
+openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+
+# Set up MongoDB Atlas connection
+MONGODB_URI = os.getenv('MONGODB_URI')  # Make sure to add this to your .env file
+mongo_client = MongoClient(MONGODB_URI)
+db = mongo_client['grocery_db']  # database name
+collection = db['cereal_analysis']  # collection name
 
 @app.route('/')
 def serve():
@@ -106,9 +121,35 @@ def save_shopping_list():
         ist_now = utc_now.replace(tzinfo=pytz.UTC).astimezone(ist)
         data['created_at'] = ist_now.strftime('%Y-%m-%d %H:%M:%S')
 
+        # Save to MongoDB
         result = db.lists.insert_one(data)
         print("✅ Saved to MongoDB with ID:", result.inserted_id)
         print("📝 Bill Number:", data['billNumber'])
+
+        # Save to Excel
+        try:
+            # Create the processing folder if it doesn't exist
+            os.makedirs('processing', exist_ok=True)
+            
+            # Define the output file path
+            output_file = os.path.join('processing', 'output_app.xlsx')
+            
+            # Convert the data to a DataFrame
+            df = pd.DataFrame([data])
+            
+            # If the file already exists, append to it
+            if os.path.exists(output_file):
+                df = pd.read_excel(output_file)
+                existing_df = pd.read_excel(output_file)
+                df = pd.concat([existing_df, df], ignore_index=True)
+            
+            # Save the DataFrame to Excel
+            df.to_excel(output_file, index=False)
+            print(f"✅ Saved to Excel at: {output_file}")
+        except Exception as excel_error:
+            print(f"❌ Error saving to Excel: {excel_error}")
+
+
 
         return jsonify({
             'success': True,
@@ -184,6 +225,7 @@ def not_found(e):
 @app.errorhandler(500)
 def server_error(e):
     return jsonify({"error": "Internal server error"}), 500
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 3000))
