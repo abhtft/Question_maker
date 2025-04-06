@@ -50,7 +50,7 @@ class ShoppingItemParser:
 5. Priority level (HIGH, MEDIUM, or LOW)
 6. Additional details or specifications
 
-Return the information in this exact JSON format:
+Return the information in this exact JSON format and similar english meaning word.ALso for brand name, consider using synonyms and search engine to find the most relevant one.
 {
     "itemName": "product name",
     "quantity": "numeric value or empty string",
