@@ -22,6 +22,11 @@ else:
 
 # Set up OpenAI client
 client = openai.OpenAI(api_key=api_key)
+# With this:
+client = openai.OpenAI(
+    api_key=api_key,
+    base_url="https://api.openai.com/v1"  # Explicitly set the base URL
+)
 
 class ShoppingItemParser:
     def __init__(self):
