@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import nltk
 import re
 #import assemblyai as aai
-from text_analyzer import analyze_text, ShoppingItemParser
+from text_analyzer_regex_openAI_excel import analyze_text, ShoppingItemParser
 import pytz
 import openai
 import json

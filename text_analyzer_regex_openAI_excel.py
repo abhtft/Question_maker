@@ -6,7 +6,6 @@ import json
 import time
 from functools import lru_cache
 import pandas as pd
-from text_analyzer import analyze_text  # Assuming analyze_text is your main analysis function
 from datetime import datetime
 
 # Load environment variables
@@ -170,6 +169,6 @@ if __name__ == '__main__':
     
     # Process the file
     #process_file(input_file, output_file)
-    analyze_text("1l milk of amul brand")
+    print(analyze_text("Cereal brand: Morning Star, sugar check needed for 4 boxes, medium priority."))
     
     print("\nProcessing complete!")
