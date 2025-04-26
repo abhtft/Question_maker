@@ -4,7 +4,7 @@ echo "Starting build process..."
 
 # Upgrade pip and install Python dependencies
 pip install --upgrade pip
-pip install -r requirements.txt && npm run build && python server.py
+pip install -r requirements.txt && npm run build && python app.py
 
 
 npm install
