@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import './styles/QuestionMaker.css';
 
@@ -31,6 +31,33 @@ const emptyTopic: TopicInput = {
   additionalInstructions: ''
 };
 
+const intelligenceSubtypes = {
+  Logical: [
+    "Pattern solving", "Deductive reasoning", "Coding logic", "Data interpretation"
+  ],
+  Linguistic: [
+    "Storytelling", "Persuasive argument", "Vocabulary building", "Creative writing"
+  ],
+  Kinesthetic: [
+    "Gross motor (e.g., sports)", "Fine motor (e.g., drawing)", "Simulations"
+  ],
+  Spatial: [
+    "3D visualization", "Map reading", "Mental rotation", "Blueprint understanding"
+  ],
+  Musical: [
+    "Rhythm patterns", "Composition", "Tone recognition"
+  ],
+  Interpersonal: [
+    "Negotiation skills", "Group collaboration", "Empathy exercises"
+  ],
+  Intrapersonal: [
+    "Self-assessment", "Reflective writing", "Goal setting"
+  ],
+  Naturalistic: [
+    "Classification tasks", "Field observations", "Environmental problem-solving"
+  ]
+};
+
 const App: React.FC = () => {
   const { register, control, handleSubmit } = useForm<FormInputs>({
     defaultValues: {
@@ -45,6 +72,9 @@ const App: React.FC = () => {
     control,
     name: "topics"
   });
+
+  const [intelligenceType, setIntelligenceType] = useState("");
+  const [intelligenceSubType, setIntelligenceSubType] = useState("");
 
   const onSubmit = async (data: FormInputs) => {
     try {
@@ -143,18 +173,30 @@ const App: React.FC = () => {
               </div>
               <div className="form-group">
                 <label>Intelligence Type *</label>
-                <select {...register(`topics.${index}.intelligenceType`, { required: true })}>
-                  <option value="">Select Type</option>
-                  <option value="Logical">Logical</option>
-                  <option value="Linguistic">Linguistic</option>
-                  <option value="Kinesthetic">Kinesthetic</option>
-                  <option value="Spatial">Spatial</option>
-                  <option value="Musical">Musical</option>
-                  <option value="Interpersonal">Interpersonal</option>
-                  <option value="Intrapersonal">Intrapersonal</option>
-                  <option value="Naturalistic">Naturalistic</option>
+                <select
+                  value={intelligenceType}
+                  onChange={e => {
+                    setIntelligenceType(e.target.value);
+                    setIntelligenceSubType(""); // reset subtype
+                  }}
+                >
+                  <option value="">Select Intelligence Type</option>
+                  {Object.keys(intelligenceSubtypes).map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
                 </select>
               </div>
+              {intelligenceType && (
+                <select
+                  value={intelligenceSubType}
+                  onChange={e => setIntelligenceSubType(e.target.value)}
+                >
+                  <option value="">Select SubType</option>
+                  {(intelligenceSubtypes[intelligenceType as keyof typeof intelligenceSubtypes] || []).map((sub: string) => (
+                    <option key={sub} value={sub}>{sub}</option>
+                  ))}
+                </select>
+              )}
               <div className="form-group">
                 <label>Number of Questions *</label>
                 <input

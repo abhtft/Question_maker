@@ -99,7 +99,7 @@ def get_feedback_context(paper_id):
         return ""
     
 
-    
+
 def generate_question_prompt(topic_data, paper_id=None):
     feedback_context = get_feedback_context(paper_id) if paper_id else ""
     
@@ -113,6 +113,8 @@ Generate {topic_data['numQuestions']} {topic_data['questionType']} questions for
 - Difficulty Level: {topic_data['difficulty']}
 - Bloom's Taxonomy Level: {topic_data['bloomLevel']}
 - Intelligence Type: {topic_data['intelligenceType']}
+- Intelligence SubType: {topic_data.get('intelligenceSubType', 'General')}
+
 
 Additional Instructions: {topic_data['additionalInstructions']}
 
@@ -135,14 +137,14 @@ Additional Instructions: {topic_data['additionalInstructions']}
 9. Incorporate feedback (if provided).
 
 🟢 Output Format (strictly JSON):
-
+Example:
 {{
   "questions": [
     {{
-      "question": "Question text here",
-      "options": ["Option 1", "Option 2", "Option 3", "Option 4"],  // Required for MCQ
-      "answer": "Correct answer text",
-      "explanation": "Detailed explanation"
+      "question": "What is the capital of France?",
+      "options": ["Berlin", "London", "Paris", "Rome"],
+      "answer": "Paris",
+      "explanation": "Paris is the capital and most populous city of France."
     }}
   ]
 }}
