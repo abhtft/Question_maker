@@ -157,31 +157,109 @@ def create_pdf(questions, filename):
     styles = getSampleStyleSheet()
     story = []
     
-    # Add title
+    # Define custom styles
     title_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
-        fontSize=16,
-        spaceAfter=30
+        fontSize=20,
+        spaceAfter=30,
+        alignment=1,  # Center alignment
+        textColor='#2c3e50'  # Dark blue color
     )
-    story.append(Paragraph("Question Paper", title_style))
-    story.append(Spacer(1, 12))
+    
+    header_style = ParagraphStyle(
+        'HeaderStyle',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceAfter=20,
+        textColor='#34495e'  # Slightly lighter blue
+    )
+    
+    question_style = ParagraphStyle(
+        'QuestionStyle',
+        parent=styles['Normal'],
+        fontSize=12,
+        spaceAfter=10,
+        textColor='#2c3e50',
+        backColor='#f8f9fa',  # Light gray background
+        borderPadding=5,
+        borderColor='#dee2e6',
+        borderWidth=1
+    )
+    
+    option_style = ParagraphStyle(
+        'OptionStyle',
+        parent=styles['Normal'],
+        fontSize=11,
+        leftIndent=20,
+        spaceAfter=5,
+        textColor='#495057'
+    )
+    
+    answer_style = ParagraphStyle(
+        'AnswerStyle',
+        parent=styles['Normal'],
+        fontSize=12,
+        spaceAfter=10,
+        textColor='#28a745',  # Green color for answers
+        backColor='#e8f5e9',  # Light green background
+        borderPadding=5,
+        borderColor='#c8e6c9',
+        borderWidth=1
+    )
+    
+    explanation_style = ParagraphStyle(
+        'ExplanationStyle',
+        parent=styles['Normal'],
+        fontSize=11,
+        spaceAfter=20,
+        textColor='#6c757d',
+        leftIndent=20
+    )
+    
+    # Add title and paper details
+    story.append(Paragraph("QUESTION PAPER", title_style))
+    
+    # Add paper details
+    details = [
+        f"<b>Class:</b> {questions[0]['classGrade']}",
+        f"<b>Subject:</b> {questions[0]['subjectName']}",
+        f"<b>Total Questions:</b> {sum(len(topic['questions']) for topic in questions)}",
+        f"<b>Difficulty Level:</b> {questions[0]['difficulty']}",
+        f"<b>Bloom's Level:</b> {questions[0]['bloomLevel']}",
+        f"<b>Intelligence Type:</b> {questions[0]['intelligenceType']}"
+    ]
+    
+    for detail in details:
+        story.append(Paragraph(detail, styles['Normal']))
+        story.append(Spacer(1, 5))
+    
+    story.append(Spacer(1, 20))
     
     # Add questions
     for i, topic in enumerate(questions, 1):
         # Add topic header
-        story.append(Paragraph(f"Topic {i}: {topic['topic']}", styles['Heading2']))
-        story.append(Spacer(1, 12))
+        story.append(Paragraph(f"Topic {i}: {topic['topic']}", header_style))
+        story.append(Spacer(1, 10))
         
         # Add questions
         for j, q in enumerate(topic['questions'], 1):
-            story.append(Paragraph(f"Q{j}. {q['question']}", styles['Normal']))
+            # Question text
+            story.append(Paragraph(f"Q{j}. {q['question']}", question_style))
+            
+            # Options (if MCQ)
             if 'options' in q:
                 for opt in q['options']:
-                    story.append(Paragraph(f"   {opt}", styles['Normal']))
-            story.append(Paragraph(f"Answer: {q['answer']}", styles['Normal']))
-            story.append(Paragraph(f"Explanation: {q['explanation']}", styles['Normal']))
-            story.append(Spacer(1, 12))
+                    story.append(Paragraph(f"• {opt}", option_style))
+            
+            # Answer
+            story.append(Paragraph(f"<b>Answer:</b> {q['answer']}", answer_style))
+            
+            # Explanation
+            story.append(Paragraph(f"<b>Explanation:</b> {q['explanation']}", explanation_style))
+            
+            # Add spacing between questions
+            story.append(Spacer(1, 15))
     
     doc.build(story)
     pdf_buffer.seek(0)
@@ -204,6 +282,33 @@ def generate_questions():
         data = request.json
         print("Request data:", data)
 
+        # Validate required fields
+        required_fields = ['subjectName', 'classGrade', 'topics']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    'success': False,
+                    'error': f"Missing required field: {field}"
+                }), 400
+
+        # Validate topics data
+        if not isinstance(data['topics'], list) or len(data['topics']) == 0:
+            return jsonify({
+                'success': False,
+                'error': "Topics must be a non-empty list"
+            }), 400
+
+        # Validate each topic
+        for topic in data['topics']:
+            required_topic_fields = ['sectionName', 'numQuestions', 'questionType', 
+                                   'difficulty', 'bloomLevel', 'intelligenceType']
+            for field in required_topic_fields:
+                if field not in topic:
+                    return jsonify({
+                        'success': False,
+                        'error': f"Missing required field in topic: {field}"
+                    }), 400
+
         # Save request to MongoDB
         data['created_at'] = datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M:%S')
         request_id = requests_collection.insert_one(data).inserted_id
@@ -220,25 +325,37 @@ def generate_questions():
                 'subjectName': data['subjectName'],
                 'classGrade': data['classGrade']
             }
-            prompt = generate_question_prompt(topic_data, previous_paper_id)
-            print("Prompt:", prompt)
+            try:
+                prompt = generate_question_prompt(topic_data, previous_paper_id)
+                print("Prompt:", prompt)
 
-            response = openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are an expert educational question generator."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=1000
-            )
-            print("OpenAI response:", response)
+                response = openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are an expert educational question generator."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=1000
+                )
+                print("OpenAI response:", response)
 
-            questions = json.loads(response.choices[0].message.content)
-            all_questions.append({
-                'topic': topic['sectionName'],
-                'questions': questions['questions']
-            })
+                questions = json.loads(response.choices[0].message.content)
+                all_questions.append({
+                    'topic': topic['sectionName'],
+                    'questions': questions['questions'],
+                    'classGrade': data['classGrade'],
+                    'subjectName': data['subjectName'],
+                    'difficulty': topic['difficulty'],
+                    'bloomLevel': topic['bloomLevel'],
+                    'intelligenceType': topic['intelligenceType']
+                })
+            except Exception as e:
+                print(f"Error generating questions for topic {topic['sectionName']}: {str(e)}")
+                return jsonify({
+                    'success': False,
+                    'error': f"Error generating questions for topic {topic['sectionName']}: {str(e)}"
+                }), 500
 
         # Save generated questions to MongoDB
         paper_data = {
