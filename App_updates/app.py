@@ -18,7 +18,6 @@ import io
 import asyncio
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
-from asgiref.sync import async_to_sync
 
 # Load environment variables
 load_dotenv()
@@ -79,7 +78,7 @@ try:
         region_name=os.getenv('AWS_REGION', 'us-east-1')
     )
     S3_BUCKET = os.getenv('S3_BUCKET_NAME')
-    NOTES_BUCKET = os.getenv('NOTES_BUCKET_NAME','notes-bucket')  # Separate bucket for notes
+    NOTES_BUCKET = os.getenv('NOTES_BUCKET_NAME', f"{S3_BUCKET}-notes")  # Separate bucket for notes
     print("✅ AWS S3 Connection Successful!")
 except Exception as e:
     print("❌ AWS S3 Connection Error:", e)
@@ -135,6 +134,7 @@ Generate {topic_data['numQuestions']} {topic_data['questionType']} questions for
 Additional Instructions: {topic_data['additionalInstructions']}
 
 {feedback_context}
+
 🔵 Strict Requirements:
 1. Match exactly the specified difficulty and Bloom's level.
 2. Test deep conceptual understanding, not rote memorization (unless instructed).
@@ -166,7 +166,7 @@ Example:
 }}
 """
 
-def create_pdf(questions, filename, subject_name, class_grade):
+def create_pdf(questions, filename):
     # Create PDF in memory
     pdf_buffer = io.BytesIO()
     doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
@@ -238,9 +238,12 @@ def create_pdf(questions, filename, subject_name, class_grade):
     
     # Add paper details
     details = [
-        f"<b>Class:</b> {class_grade}",
-        f"<b>Subject:</b> {subject_name}",
-        f"<b>Total Questions:</b> {sum(len(topic['questions']) for topic in questions)}"
+        f"<b>Class:</b> {questions[0]['classGrade']}",
+        f"<b>Subject:</b> {questions[0]['subjectName']}",
+        f"<b>Total Questions:</b> {sum(len(topic['questions']) for topic in questions)}",
+        f"<b>Difficulty Level:</b> {questions[0]['difficulty']}",
+        f"<b>Bloom's Level:</b> {questions[0]['bloomLevel']}",
+        f"<b>Intelligence Type:</b> {questions[0]['intelligenceType']}"
     ]
     
     for detail in details:
@@ -301,12 +304,9 @@ def generate_cache_key(topic_data):
     }
     return hashlib.md5(json.dumps(key_data, sort_keys=True).encode()).hexdigest()
 
-def generate_questions_for_topic(topic_data, previous_paper_id=None):
+async def generate_questions_for_topic(topic_data, previous_paper_id=None):
     """Generate questions for a single topic with caching"""
     try:
-        print(f"\nGenerating questions for topic: {topic_data['sectionName']}")
-        print(f"Topic data: {json.dumps(topic_data, indent=2)}")
-
         # Check cache first
         cache_key = generate_cache_key(topic_data)
         cached_questions = papers_collection.find_one(
@@ -326,12 +326,9 @@ def generate_questions_for_topic(topic_data, previous_paper_id=None):
                 'cached': True
             }
 
-        print("Generating prompt...")
         prompt = generate_question_prompt(topic_data, previous_paper_id)
-        print("Generated prompt. Calling OpenAI API...")
-
-        try:
-            response = openai_client.chat.completions.create(
+        response = await asyncio.to_thread(
+            lambda: openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "You are an expert educational question generator."},
@@ -340,19 +337,9 @@ def generate_questions_for_topic(topic_data, previous_paper_id=None):
                 temperature=0.7,
                 max_tokens=1000
             )
-            print("Received response from OpenAI")
-        except Exception as e:
-            print(f"Error calling OpenAI API: {str(e)}")
-            raise
-
-        try:
-            print("Parsing OpenAI response...")
-            questions = json.loads(response.choices[0].message.content)
-            print(f"Successfully parsed questions: {json.dumps(questions, indent=2)}")
-        except json.JSONDecodeError as e:
-            print(f"Error parsing OpenAI response: {str(e)}")
-            print(f"Raw response content: {response.choices[0].message.content}")
-            raise
+        )
+        
+        questions = json.loads(response.choices[0].message.content)
         
         # Cache the results
         cache_data = {
@@ -361,7 +348,6 @@ def generate_questions_for_topic(topic_data, previous_paper_id=None):
             'created_at': datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M:%S')
         }
         papers_collection.insert_one(cache_data)
-        print("Cached the generated questions")
         
         return {
             'topic': topic_data['sectionName'],
@@ -370,55 +356,41 @@ def generate_questions_for_topic(topic_data, previous_paper_id=None):
         }
     except Exception as e:
         print(f"Error generating questions for topic {topic_data['sectionName']}: {str(e)}")
-        print("Full error details:", e.__dict__)
         raise
 
 @app.route('/api/generate-questions', methods=['POST'])
-def generate_questions():
+async def generate_questions():
     try:
         print("Received request at /api/generate-questions")
         data = request.json
-        print("Request data:", json.dumps(data, indent=2))
+        print("Request data:", data)
 
         # Validate required fields
         required_fields = ['subjectName', 'classGrade', 'topics']
         for field in required_fields:
             if field not in data:
-                print(f"Missing required field: {field}")
                 return jsonify({
                     'success': False,
                     'error': f"Missing required field: {field}"
                 }), 400
 
-        # Validate topic fields
-        required_topic_fields = ['sectionName', 'questionType', 'difficulty', 'bloomLevel', 'intelligenceType', 'numQuestions']
-        for i, topic in enumerate(data['topics']):
-            for field in required_topic_fields:
-                if not topic.get(field):
-                    print(f"Missing or empty required field '{field}' in topic {i+1}")
-                    return jsonify({
-                        'success': False,
-                        'error': f"Missing or empty required field '{field}' in topic {i+1}"
-                    }), 400
-
         # Save request to MongoDB
         data['created_at'] = datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M:%S')
         request_id = requests_collection.insert_one(data).inserted_id
-        print(f"Saved request to MongoDB with ID: {request_id}")
-
-        # Generate questions for all topics
-        all_questions = []
+        
+        # Generate questions for all topics in parallel
+        tasks = []
         for topic in data['topics']:
             topic_data = {
                 **topic,
                 'subjectName': data['subjectName'],
                 'classGrade': data['classGrade']
             }
-            questions = generate_questions_for_topic(topic_data, data.get('previous_paper_id'))
-            all_questions.append(questions)
+            tasks.append(generate_questions_for_topic(topic_data, data.get('previous_paper_id')))
         
-        print(f"Successfully generated questions for all topics")
-
+        # Wait for all topics to complete
+        all_questions = await asyncio.gather(*tasks)
+        
         # Save generated questions to MongoDB
         paper_data = {
             'request_id': str(request_id),
@@ -427,51 +399,42 @@ def generate_questions():
             'previous_paper_id': data.get('previous_paper_id')
         }
         paper_id = papers_collection.insert_one(paper_data).inserted_id
-        print(f"Saved generated questions to MongoDB with ID: {paper_id}")
 
         # Generate PDF and upload to S3
+        pdf_filename = f"question_paper_{paper_id}.pdf"
+        pdf_buffer = create_pdf(all_questions, pdf_filename)
+        
+        # Upload to S3
         try:
-            pdf_filename = f"question_paper_{paper_id}.pdf"
-            pdf_buffer = create_pdf(all_questions, pdf_filename, data['subjectName'], data['classGrade'])
-            print("Successfully generated PDF")
-
-            # Upload to S3
             s3_client.upload_fileobj(
                 pdf_buffer,
                 S3_BUCKET,
                 pdf_filename,
                 ExtraArgs={'ContentType': 'application/pdf'}
             )
-            print(f"Successfully uploaded PDF to S3: {pdf_filename}")
+            print(f"PDF uploaded to S3: {pdf_filename}")
             
-            # Generate pre-signed URL with longer expiration
             url = s3_client.generate_presigned_url(
                 'get_object',
                 Params={
                     'Bucket': S3_BUCKET,
                     'Key': pdf_filename
                 },
-                ExpiresIn=3600  # URL expires in 1 hour
+                ExpiresIn=3600
             )
-            print(f"Generated pre-signed URL for PDF: {url}")
-
-            return jsonify({
-                'success': True,
-                'paper_id': str(paper_id),
-                'questions': all_questions,
-                'pdf_url': url
-            })
-
         except Exception as e:
-            print(f"Error with PDF generation or S3 upload: {e}")
-            return jsonify({
-                'success': False,
-                'error': f"Error generating PDF: {str(e)}"
-            }), 500
+            print(f"Error with S3: {e}")
+            url = None
+
+        return jsonify({
+            'success': True,
+            'paper_id': str(paper_id),
+            'questions': all_questions,
+            'pdf_url': url
+        })
 
     except Exception as e:
         print("Error in /api/generate-questions:", str(e))
-        print("Full error details:", e.__dict__)
         return jsonify({
             'success': False,
             'error': str(e)
@@ -599,6 +562,14 @@ def upload_note():
                 'error': 'Only PDF files are allowed'
             }), 400
 
+        # Extract text from PDF
+        text_content = extract_text_from_pdf(file)
+        if not text_content:
+            return jsonify({
+                'success': False,
+                'error': 'Could not extract text from PDF'
+            }), 400
+
         # Generate unique filename
         filename = f"notes/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
         
@@ -608,7 +579,10 @@ def upload_note():
             NOTES_BUCKET,
             filename,
             ExtraArgs={
-                'ContentType': 'application/pdf'
+                'ContentType': 'application/pdf',
+                'Metadata': {
+                    'text-content': text_content[:1000]  # Store first 1000 chars as metadata
+                }
             }
         )
 
@@ -627,6 +601,7 @@ def upload_note():
             'filename': filename,
             'original_name': file.filename,
             'uploaded_at': datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M:%S'),
+            'text_content': text_content,
             's3_url': url
         }
         notes_collection = db['notes']
@@ -636,7 +611,8 @@ def upload_note():
             'success': True,
             'note_id': str(note_id),
             'filename': file.filename,
-            'url': url
+            'url': url,
+            'text_preview': text_content[:500]  # Return first 500 chars as preview
         })
 
     except Exception as e:
@@ -704,5 +680,5 @@ if __name__ == '__main__':
     app.run(
         host='0.0.0.0',
         port=port,
-        debug=False  # Run in production mode
+        debug=True
     )

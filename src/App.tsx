@@ -4,13 +4,14 @@ import './styles/QuestionMaker.css';
 
 interface TopicInput {
   sectionName: string;
-  topicNotes: string;
   questionType: string;
   difficulty: string;
   bloomLevel: string;
   intelligenceType: string;
+  intelligenceSubType: string;
   numQuestions: string;
   additionalInstructions: string;
+  noteId?: string;
 }
 
 interface FormInputs {
@@ -22,13 +23,14 @@ interface FormInputs {
 
 const emptyTopic: TopicInput = {
   sectionName: '',
-  topicNotes: '',
   questionType: '',
   difficulty: '',
   bloomLevel: '',
   intelligenceType: '',
+  intelligenceSubType: '',
   numQuestions: '',
-  additionalInstructions: ''
+  additionalInstructions: '',
+  noteId: undefined
 };
 
 const intelligenceSubtypes = {
@@ -59,7 +61,7 @@ const intelligenceSubtypes = {
 };
 
 const App: React.FC = () => {
-  const { register, control, handleSubmit } = useForm<FormInputs>({
+  const { register, control, handleSubmit, setValue, watch } = useForm<FormInputs>({
     defaultValues: {
       subjectName: '',
       classGrade: '',
@@ -73,8 +75,52 @@ const App: React.FC = () => {
     name: "topics"
   });
 
-  const [intelligenceType, setIntelligenceType] = useState("");
-  const [intelligenceSubType, setIntelligenceSubType] = useState("");
+  const [uploadingFiles, setUploadingFiles] = useState<{ [key: number]: boolean }>({});
+
+  // Watch intelligence type values for each topic
+  const topics = watch('topics');
+
+  const handleIntelligenceTypeChange = (index: number, value: string) => {
+    setValue(`topics.${index}.intelligenceType`, value);
+    // Reset subtype when type changes
+    setValue(`topics.${index}.intelligenceSubType`, '');
+  };
+
+  const handleIntelligenceSubTypeChange = (index: number, value: string) => {
+    setValue(`topics.${index}.intelligenceSubType`, value);
+  };
+
+  const handleFileUpload = async (file: File, topicIndex: number) => {
+    if (!file) return;
+
+    setUploadingFiles(prev => ({ ...prev, [topicIndex]: true }));
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch('/api/upload-note', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Update the topic's noteId
+        const updatedTopics = [...fields];
+        updatedTopics[topicIndex].noteId = result.note_id;
+        // You might want to show a success message here
+      } else {
+        alert('Failed to upload file: ' + result.error);
+      }
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      alert('Failed to upload file. Please try again.');
+    } finally {
+      setUploadingFiles(prev => ({ ...prev, [topicIndex]: false }));
+    }
+  };
 
   const onSubmit = async (data: FormInputs) => {
     try {
@@ -90,11 +136,13 @@ const App: React.FC = () => {
 
       const result = await response.json();
 
-      if (result.success) {
-        // Redirect to thank you page with the PDF URL as a query parameter
+      if (result.success && result.pdf_url) {
+        // Open the PDF URL in a new tab
+        window.open(result.pdf_url, '_blank');
+        // Also redirect to thank you page
         window.location.href = `/thankyou.html?pdf=${encodeURIComponent(result.pdf_url)}`;
       } else {
-        throw new Error(result.error);
+        throw new Error(result.error || 'Failed to generate questions');
       }
     } catch (error) {
       console.error('Error:', error);
@@ -137,10 +185,6 @@ const App: React.FC = () => {
                 <input {...register(`topics.${index}.sectionName`, { required: true })} />
               </div>
               <div className="form-group">
-                <label>Topic Notes</label>
-                <textarea {...register(`topics.${index}.topicNotes`)} />
-              </div>
-              <div className="form-group">
                 <label>Question Type *</label>
                 <select {...register(`topics.${index}.questionType`, { required: true })}>
                   <option value="">Select Type</option>
@@ -174,11 +218,8 @@ const App: React.FC = () => {
               <div className="form-group">
                 <label>Intelligence Type *</label>
                 <select
-                  value={intelligenceType}
-                  onChange={e => {
-                    setIntelligenceType(e.target.value);
-                    setIntelligenceSubType(""); // reset subtype
-                  }}
+                  {...register(`topics.${index}.intelligenceType`, { required: true })}
+                  onChange={(e) => handleIntelligenceTypeChange(index, e.target.value)}
                 >
                   <option value="">Select Intelligence Type</option>
                   {Object.keys(intelligenceSubtypes).map(type => (
@@ -186,27 +227,59 @@ const App: React.FC = () => {
                   ))}
                 </select>
               </div>
-              {intelligenceType && (
-                <select
-                  value={intelligenceSubType}
-                  onChange={e => setIntelligenceSubType(e.target.value)}
-                >
-                  <option value="">Select SubType</option>
-                  {(intelligenceSubtypes[intelligenceType as keyof typeof intelligenceSubtypes] || []).map((sub: string) => (
-                    <option key={sub} value={sub}>{sub}</option>
-                  ))}
-                </select>
+
+              {topics[index]?.intelligenceType && (
+                <div className="form-group">
+                  <label>Intelligence SubType *</label>
+                  <select
+                    {...register(`topics.${index}.intelligenceSubType`, { required: true })}
+                    onChange={(e) => handleIntelligenceSubTypeChange(index, e.target.value)}
+                  >
+                    <option value="">Select SubType</option>
+                    {(intelligenceSubtypes[topics[index].intelligenceType as keyof typeof intelligenceSubtypes] || []).map((sub: string) => (
+                      <option key={sub} value={sub}>{sub}</option>
+                    ))}
+                  </select>
+                </div>
               )}
+
               <div className="form-group">
                 <label>Number of Questions *</label>
                 <input
                   type="number"
-                  {...register(`topics.${index}.numQuestions`, { required: true, min: 1 })}
+                  {...register(`topics.${index}.numQuestions`, { required: true, min: 1, max: 5 })}
                 />
+                <div className="input-note">
+                  Note: Maximum 5 questions per topic due to AI processing limits. Generation may take 10-15 seconds.
+                </div>
               </div>
               <div className="form-group">
                 <label>Additional Instructions</label>
                 <textarea {...register(`topics.${index}.additionalInstructions`)} />
+              </div>
+              <div className="form-group">
+                <label>Upload Notes (PDF)</label>
+                <div className="file-upload-container">
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        handleFileUpload(file, index);
+                      }
+                    }}
+                    disabled={uploadingFiles[index]}
+                    style={{ display: 'none' }}
+                    id={`file-upload-${index}`}
+                  />
+                  <label htmlFor={`file-upload-${index}`} className="file-upload-button">
+                    {uploadingFiles[index] ? 'Uploading...' : 'Choose File'}
+                  </label>
+                  {fields[index].noteId && (
+                    <span className="file-upload-success">✓ File uploaded successfully</span>
+                  )}
+                </div>
               </div>
               {index > 0 && (
                 <button type="button" onClick={() => remove(index)}>
